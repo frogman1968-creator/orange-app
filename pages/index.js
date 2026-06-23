@@ -1,33 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabase';
-import { getYahooAuthURL } from '../lib/yahoo';
+import { getSleeperUser } from '../lib/sleeper';
 
 export default function Home() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+  async function handleConnect(e) {
+    e.preventDefault();
+    if (!username.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const user = await getSleeperUser(username.trim());
+      if (!user || !user.user_id) {
+        setError('Sleeper username not found. Check your spelling and try again.');
+        return;
+      }
+      // Store user in localStorage and go to dashboard
+      localStorage.setItem('sleeper_user', JSON.stringify(user));
+      router.push(`/dashboard?userId=${user.user_id}`);
+    } catch (err) {
+      setError('Could not connect. Check your Sleeper username and try again.');
+    } finally {
       setLoading(false);
-      if (session?.user) router.push('/dashboard');
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) return <LoadingScreen />;
+    }
+  }
 
   return (
     <div style={styles.page}>
       <div style={styles.hero}>
-        {/* Logo */}
         <div style={styles.logoWrap}>
           <div style={styles.logoCircle}>🟠</div>
           <span style={styles.logoText}>Orange</span>
@@ -55,13 +59,22 @@ export default function Home() {
           ))}
         </div>
 
-        <button
-          style={styles.ctaButton}
-          onClick={() => window.location.href = getYahooAuthURL()}
-        >
-          Connect Yahoo Fantasy →
-        </button>
+        <form onSubmit={handleConnect} style={styles.connectForm}>
+          <input
+            type="text"
+            placeholder="Your Sleeper username"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            style={styles.input}
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+          <button type="submit" style={styles.ctaButton} disabled={loading}>
+            {loading ? 'Connecting...' : 'Connect Sleeper →'}
+          </button>
+        </form>
 
+        {error && <p style={styles.error}>{error}</p>}
         <p style={styles.disclaimer}>Free to try. No credit card required.</p>
       </div>
     </div>
@@ -194,6 +207,29 @@ const styles = {
     cursor: 'pointer',
     marginTop: 8,
     letterSpacing: '-0.2px',
+  },
+  connectForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    width: '100%',
+    marginTop: 8,
+  },
+  input: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 12,
+    padding: '14px 18px',
+    fontSize: 16,
+    color: '#fff',
+    outline: 'none',
+    width: '100%',
+  },
+  error: {
+    fontSize: 13,
+    color: '#ef4444',
+    margin: 0,
+    textAlign: 'center',
   },
   disclaimer: {
     fontSize: 13,
