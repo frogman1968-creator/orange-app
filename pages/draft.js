@@ -26,6 +26,43 @@ function missingPositions(counts) {
     .map(([pos]) => pos);
 }
 
+// Detect heavy position patterns and suggest what to target next
+function getPatternSuggestion(roster, available, counts) {
+  if (roster.length < 2) return null;
+
+  // Look at last 2 picks
+  const recent = roster.slice(-2).map(p => p.position);
+  if (recent[0] !== recent[1]) return null; // no pattern
+
+  const heavyPos = recent[0];
+
+  // Map heavy position → what to suggest
+  const suggestMap = {
+    RB: counts.WR < 2 ? 'WR' : counts.TE < 1 ? 'TE' : 'WR',
+    WR: counts.RB < 2 ? 'RB' : counts.TE < 1 ? 'TE' : 'RB',
+    QB: counts.RB < 2 ? 'RB' : 'WR',
+    TE: counts.WR < 2 ? 'WR' : 'RB',
+    K:  'DEF',
+    DEF: 'K',
+  };
+
+  const suggestPos = suggestMap[heavyPos];
+  if (!suggestPos) return null;
+
+  // Already have enough of that position? Skip
+  const needed = ROSTER_REQUIREMENTS[suggestPos] || 1;
+  if ((counts[suggestPos] || 0) >= needed) return null;
+
+  const top3 = available
+    .filter(p => p.position === suggestPos)
+    .sort((a, b) => b.projectedPts - a.projectedPts)
+    .slice(0, 3);
+
+  if (top3.length === 0) return null;
+
+  return { heavyPos, suggestPos, players: top3 };
+}
+
 export default function DraftCompanion() {
   const router = useRouter();
   const [myRoster, setMyRoster] = useState([]);
@@ -64,6 +101,11 @@ export default function DraftCompanion() {
       return { ...p, isNeed, isValuePick, score };
     }).sort((a, b) => b.score - a.score);
   }, [available, urgency, currentRound]);
+
+  const suggestion = useMemo(
+    () => getPatternSuggestion(myRoster, available, counts),
+    [myRoster, available, counts]
+  );
 
   const filtered = scoredPlayers.filter(p => {
     const matchPos = posFilter === 'ALL' || p.position === posFilter;
@@ -104,6 +146,28 @@ export default function DraftCompanion() {
       {missing.length > 0 && currentRound <= 10 && (
         <div style={styles.needBanner}>
           🎯 Open slots: {missing.join(' · ')}
+        </div>
+      )}
+
+      {/* Orange Suggests Banner */}
+      {suggestion && (
+        <div style={styles.suggestBanner}>
+          <div style={styles.suggestHeader}>
+            🟠 You went {suggestion.heavyPos}-{suggestion.heavyPos} — top {suggestion.suggestPos} picks right now:
+          </div>
+          {suggestion.players.map((p, i) => (
+            <div key={p.id} style={styles.suggestRow}>
+              <span style={styles.suggestRank}>#{i + 1}</span>
+              <span style={getPosBadge(p.position)}>{p.position}</span>
+              <div style={styles.suggestInfo}>
+                <span style={styles.suggestName}>{p.name}</span>
+                <span style={styles.suggestMeta}>{p.team} · {p.projectedPts.toFixed(1)} proj</span>
+              </div>
+              <button style={styles.suggestDraftBtn} onClick={() => draftPlayer(p)}>
+                Draft
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -320,6 +384,41 @@ const styles = {
     fontSize: 13,
     fontWeight: 600,
     padding: '8px 16px',
+  },
+  suggestBanner: {
+    background: '#0d1a2e',
+    borderBottom: '1px solid #0284c7',
+    padding: '10px 16px',
+  },
+  suggestHeader: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: '#38bdf8',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+  },
+  suggestRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '6px 0',
+    borderBottom: '1px solid #0f2a3f',
+  },
+  suggestRank: { fontSize: 11, color: '#334155', fontWeight: 700, width: 20 },
+  suggestInfo: { flex: 1, display: 'flex', flexDirection: 'column' },
+  suggestName: { fontSize: 13, fontWeight: 700, color: '#e2e8f0' },
+  suggestMeta: { fontSize: 11, color: '#475569' },
+  suggestDraftBtn: {
+    background: '#0284c7',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+    flexShrink: 0,
   },
   panelToggle: {
     display: 'flex',
