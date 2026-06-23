@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { MY_ROSTER, CURRENT_MATCHUP, WEEKLY_RECOMMENDATIONS } from '../lib/sampleData';
+import { MY_ROSTER, CURRENT_MATCHUP, WEEKLY_RECOMMENDATIONS, PLAYER_DETAILS } from '../lib/sampleData';
 
 const GRADE_COLOR = { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#ef4444', F: '#7f1d1d' };
 const REC_COLOR   = { start: '#22c55e', monitor: '#f59e0b', sit: '#ef4444' };
@@ -9,6 +9,7 @@ export default function LineupOptimizer() {
   const router = useRouter();
   const [view, setView] = useState('startsit'); // 'startsit' | 'lineup' | 'matchup'
   const [swapped, setSwapped] = useState({}); // slotId → benchPlayer
+  const [moreInfoPlayer, setMoreInfoPlayer] = useState(null); // player shown in bottom sheet
 
   const allStarters = MY_ROSTER.starters.map(p => ({
     ...p,
@@ -113,13 +114,13 @@ export default function LineupOptimizer() {
       {view === 'startsit' && (
         <div style={styles.content}>
           {starts.length > 0 && (
-            <RecSection title="✅ Start" color="#22c55e" recs={starts} />
+            <RecSection title="✅ Start" color="#22c55e" recs={starts} onMoreInfo={setMoreInfoPlayer} />
           )}
           {monitors.length > 0 && (
-            <RecSection title="👀 Monitor" color="#f59e0b" recs={monitors} />
+            <RecSection title="👀 Monitor" color="#f59e0b" recs={monitors} onMoreInfo={setMoreInfoPlayer} />
           )}
           {sits.length > 0 && (
-            <RecSection title="🪑 Sit" color="#ef4444" recs={sits} />
+            <RecSection title="🪑 Sit" color="#ef4444" recs={sits} onMoreInfo={setMoreInfoPlayer} />
           )}
         </div>
       )}
@@ -244,6 +245,98 @@ export default function LineupOptimizer() {
         </div>
       )}
 
+      {/* More Info Bottom Sheet */}
+      {moreInfoPlayer && (
+        <div style={styles.sheetOverlay} onClick={() => setMoreInfoPlayer(null)}>
+          <div style={styles.sheet} onClick={e => e.stopPropagation()}>
+            <div style={styles.sheetHandle} />
+
+            {/* Player header */}
+            <div style={styles.sheetHeader}>
+              <span style={getPosBadge(moreInfoPlayer.position)}>{moreInfoPlayer.position}</span>
+              <div style={styles.sheetPlayerInfo}>
+                <div style={styles.sheetPlayerName}>{moreInfoPlayer.name}</div>
+                <div style={styles.sheetPlayerTeam}>{moreInfoPlayer.team}</div>
+              </div>
+              <button style={styles.sheetClose} onClick={() => setMoreInfoPlayer(null)}>✕</button>
+            </div>
+
+            {(() => {
+              const d = PLAYER_DETAILS[moreInfoPlayer.id];
+              if (!d) return <div style={styles.sheetNoData}>Detailed data available when Yahoo connects.</div>;
+              return (
+                <>
+                  {/* Orange Verdict */}
+                  <div style={{ ...styles.verdictCard, borderColor: d.verdictColor }}>
+                    <div style={{ ...styles.verdictLabel, color: d.verdictColor }}>
+                      🟠 Orange Verdict: {d.verdict}
+                    </div>
+                    <div style={styles.verdictDetail}>{d.verdictDetail}</div>
+                  </div>
+
+                  {/* Projections */}
+                  <div style={styles.sheetSection}>
+                    <div style={styles.sheetSectionTitle}>Projections</div>
+                    <div style={styles.statGrid}>
+                      <div style={styles.statCard}>
+                        <div style={styles.statValue}>{moreInfoPlayer.projectedPts.toFixed(1)}</div>
+                        <div style={styles.statLabel}>Orange Proj</div>
+                      </div>
+                      <div style={styles.statCard}>
+                        <div style={styles.statValue}>{d.expertConsensus.toFixed(1)}</div>
+                        <div style={styles.statLabel}>Expert Avg</div>
+                      </div>
+                      <div style={styles.statCard}>
+                        <div style={{ ...styles.statValue, fontSize: 13 }}>{d.expertLow}–{d.expertHigh}</div>
+                        <div style={styles.statLabel}>Expert Range</div>
+                      </div>
+                      <div style={styles.statCard}>
+                        <div style={styles.statValue}>{d.ecrPos}</div>
+                        <div style={styles.statLabel}>ECR Rank</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Matchup */}
+                  <div style={styles.sheetSection}>
+                    <div style={styles.sheetSectionTitle}>Matchup</div>
+                    <div style={styles.matchupDetailRow}>
+                      <span style={styles.matchupDetailLabel}>Opponent</span>
+                      <span style={styles.matchupDetailValue}>vs {d.oppTeam}</span>
+                    </div>
+                    <div style={styles.matchupDetailRow}>
+                      <span style={styles.matchupDetailLabel}>Def Rank</span>
+                      <span style={{ ...styles.matchupDetailValue, color: d.oppDefRank > 20 ? '#22c55e' : d.oppDefRank > 10 ? '#f59e0b' : '#ef4444' }}>
+                        {d.oppDefLabel}
+                      </span>
+                    </div>
+                    <div style={styles.matchupDetailRow}>
+                      <span style={styles.matchupDetailLabel}>Vegas O/U</span>
+                      <span style={styles.matchupDetailValue}>{d.vegasTotal}</span>
+                    </div>
+                    <div style={styles.matchupDetailRow}>
+                      <span style={styles.matchupDetailLabel}>Implied Pts</span>
+                      <span style={{ ...styles.matchupDetailValue, color: '#22c55e' }}>{d.impliedTeamScore}</span>
+                    </div>
+                  </div>
+
+                  {/* Injury */}
+                  <div style={styles.sheetSection}>
+                    <div style={styles.sheetSectionTitle}>Injury Report</div>
+                    <div style={styles.injuryDetail}>{d.injuryStatus}</div>
+                  </div>
+
+                  {/* Expert note */}
+                  <div style={styles.expertNote}>
+                    📡 Live expert consensus from FantasyPros top-100 analysts syncs automatically when Yahoo API connects.
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Bottom Nav */}
       <div style={styles.bottomNav}>
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
@@ -256,7 +349,7 @@ export default function LineupOptimizer() {
 
 // ─── Start/Sit Section ────────────────────────────────────────────────────────
 
-function RecSection({ title, color, recs }) {
+function RecSection({ title, color, recs, onMoreInfo }) {
   return (
     <div style={styles.recSection}>
       <div style={{ ...styles.recSectionTitle, color }}>{title}</div>
@@ -270,6 +363,9 @@ function RecSection({ title, color, recs }) {
                 {rec.injuryFlag && <span style={styles.injuryTag}> ⚠️</span>}
               </div>
               <div style={styles.recCardReason}>{rec.reason}</div>
+              <button style={styles.moreInfoBtn} onClick={() => onMoreInfo(rec.player)}>
+                More Info ›
+              </button>
             </div>
           </div>
           <div style={styles.recCardRight}>
@@ -418,6 +514,68 @@ const styles = {
     padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6, flexDirection: 'column',
   },
   weaknessHint: { fontSize: 10, color: '#52525b', textAlign: 'center' },
+  moreInfoBtn: {
+    background: 'transparent', border: '1px solid #2a2a2a', color: '#52525b',
+    borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 600,
+    cursor: 'pointer', marginTop: 5,
+  },
+  sheetOverlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    zIndex: 100, display: 'flex', alignItems: 'flex-end',
+  },
+  sheet: {
+    background: '#161616', borderRadius: '20px 20px 0 0',
+    border: '1px solid #2a2a2a', width: '100%',
+    maxHeight: '85vh', overflowY: 'auto', padding: '0 20px 40px',
+  },
+  sheetHandle: {
+    width: 40, height: 4, background: '#3f3f46',
+    borderRadius: 2, margin: '14px auto 20px',
+  },
+  sheetHeader: {
+    display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+  },
+  sheetPlayerInfo: { flex: 1 },
+  sheetPlayerName: { fontSize: 18, fontWeight: 800 },
+  sheetPlayerTeam: { fontSize: 13, color: '#71717a' },
+  sheetClose: {
+    background: '#1f1f1f', border: 'none', color: '#71717a',
+    borderRadius: 8, width: 32, height: 32, fontSize: 14,
+    cursor: 'pointer', flexShrink: 0,
+  },
+  verdictCard: {
+    border: '1px solid', borderRadius: 12,
+    padding: '14px', marginBottom: 16, background: '#0d0d0d',
+  },
+  verdictLabel: { fontSize: 13, fontWeight: 800, marginBottom: 6 },
+  verdictDetail: { fontSize: 13, color: '#a1a1aa', lineHeight: 1.5 },
+  sheetSection: { marginBottom: 16 },
+  sheetSectionTitle: {
+    fontSize: 11, fontWeight: 800, color: '#52525b',
+    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10,
+  },
+  statGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 },
+  statCard: {
+    background: '#1a1a1a', borderRadius: 8, padding: '10px 8px', textAlign: 'center',
+  },
+  statValue: { fontSize: 17, fontWeight: 800, color: '#f97316', marginBottom: 3 },
+  statLabel: { fontSize: 10, color: '#52525b', fontWeight: 600 },
+  matchupDetailRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '8px 0', borderBottom: '1px solid #1a1a1a',
+  },
+  matchupDetailLabel: { fontSize: 12, color: '#52525b' },
+  matchupDetailValue: { fontSize: 13, fontWeight: 700 },
+  injuryDetail: {
+    background: '#1a1a1a', borderRadius: 8, padding: '10px 14px',
+    fontSize: 13, color: '#a1a1aa',
+  },
+  expertNote: {
+    background: '#0d1a2e', border: '1px solid #0284c7', borderRadius: 8,
+    padding: '10px 14px', fontSize: 12, color: '#38bdf8', lineHeight: 1.5,
+    marginTop: 8,
+  },
+  sheetNoData: { fontSize: 13, color: '#52525b', padding: '20px 0', textAlign: 'center' },
   bottomNav: {
     position: 'fixed', bottom: 0, left: 0, right: 0,
     background: '#111', borderTop: '1px solid #1f1f1f',
