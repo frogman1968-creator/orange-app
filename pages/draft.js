@@ -1,196 +1,257 @@
-import { useState, useEffect } from 'react';
-import { getDraftRecommendations, getADP, getRosterNeedLabel } from '../lib/optimizer';
-import { getAvailablePlayers, getLeagueRoster } from '../lib/yahoo';
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/router';
+import { DRAFT_POOL, ROSTER_REQUIREMENTS } from '../lib/sampleData';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 
+function countPositions(roster) {
+  const counts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+  roster.forEach(p => { if (counts[p.position] !== undefined) counts[p.position]++; });
+  return counts;
+}
+
+function calcUrgency(counts, round, totalRounds) {
+  const roundsLeft = totalRounds - round + 1;
+  const urgency = {};
+  Object.entries(ROSTER_REQUIREMENTS).forEach(([pos, needed]) => {
+    const remaining = Math.max(0, needed - counts[pos]);
+    urgency[pos] = remaining === 0 ? 0 : Math.min(1, remaining / Math.max(1, roundsLeft * 0.4));
+  });
+  return urgency;
+}
+
+function missingPositions(counts) {
+  return Object.entries(ROSTER_REQUIREMENTS)
+    .filter(([pos]) => counts[pos] === 0)
+    .map(([pos]) => pos);
+}
+
 export default function DraftCompanion() {
+  const router = useRouter();
   const [myRoster, setMyRoster] = useState([]);
-  const [available, setAvailable] = useState([]);
-  const [recommendations, setRecs] = useState([]);
-  const [rosterNeeds, setRosterNeeds] = useState({});
+  const [available, setAvailable] = useState(DRAFT_POOL);
   const [posFilter, setPosFilter] = useState('ALL');
   const [currentRound, setCurrentRound] = useState(1);
-  const [scoringType] = useState('ppr');
-  const [loading, setLoading] = useState(false);
-  const [adpData, setAdpData] = useState([]);
+  const [search, setSearch] = useState('');
+  const [panel, setPanel] = useState('picks'); // 'picks' | 'roster'
+  const TOTAL_ROUNDS = 15;
 
-  useEffect(() => {
-    loadADP();
-  }, [scoringType]);
-
-  useEffect(() => {
-    if (available.length > 0) fetchRecommendations();
-  }, [myRoster, available, currentRound]);
-
-  async function loadADP() {
-    const { data } = await getADP(scoringType);
-    setAdpData(data || []);
-  }
-
-  async function fetchRecommendations() {
-    setLoading(true);
-    try {
-      const { recommendations: recs, rosterNeeds: needs } = await getDraftRecommendations({
-        draftedPlayers: myRoster,
-        availablePlayers: available,
-        scoringType,
-        currentRound,
-        totalRounds: 15,
-        userDraftPosition: 1,
-      });
-      setRecs(recs || []);
-      setRosterNeeds(needs || {});
-    } finally {
-      setLoading(false);
-    }
-  }
+  const counts = useMemo(() => countPositions(myRoster), [myRoster]);
+  const urgency = useMemo(() => calcUrgency(counts, currentRound, TOTAL_ROUNDS), [counts, currentRound]);
+  const missing = useMemo(() => missingPositions(counts), [counts]);
 
   function draftPlayer(player) {
-    setMyRoster(prev => [...prev, player]);
+    setMyRoster(prev => [...prev, { ...player, draftedRound: currentRound }]);
     setAvailable(prev => prev.filter(p => p.id !== player.id));
-    setCurrentRound(Math.ceil((myRoster.length + 1) / 1) + 1);
+    setCurrentRound(prev => prev + 1);
+    setSearch('');
   }
 
-  const filtered = recommendations.filter(
-    r => posFilter === 'ALL' || r.player.position === posFilter
-  );
+  function undoLastPick() {
+    if (myRoster.length === 0) return;
+    const last = myRoster[myRoster.length - 1];
+    setMyRoster(prev => prev.slice(0, -1));
+    setAvailable(prev => [...prev, last].sort((a, b) => a.adp - b.adp));
+    setCurrentRound(prev => Math.max(1, prev - 1));
+  }
+
+  const scoredPlayers = useMemo(() => {
+    return available.map(p => {
+      const posUrgency = urgency[p.position] || 0;
+      const isNeed = posUrgency > 0.3;
+      const isValuePick = p.adp > currentRound + 2;
+      const score = p.projectedPts + posUrgency * 8 + (isValuePick ? 5 : 0);
+      return { ...p, isNeed, isValuePick, score };
+    }).sort((a, b) => b.score - a.score);
+  }, [available, urgency, currentRound]);
+
+  const filtered = scoredPlayers.filter(p => {
+    const matchPos = posFilter === 'ALL' || p.position === posFilter;
+    const matchSearch = search === '' || p.name.toLowerCase().includes(search.toLowerCase());
+    return matchPos && matchSearch;
+  });
+
+  const draftDone = currentRound > TOTAL_ROUNDS;
 
   return (
     <div style={styles.page}>
+
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
+          <button style={styles.backBtn} onClick={() => router.push('/dashboard')}>←</button>
           <span style={styles.logo}>🟠</span>
-          <span style={styles.headerTitle}>Draft Companion</span>
+          <span style={styles.headerTitle}>Draft</span>
         </div>
-        <div style={styles.roundBadge}>Round {currentRound}</div>
+        <div style={styles.headerRight}>
+          <div style={styles.roundBadge}>
+            {draftDone ? 'Done' : `R${currentRound} · P${myRoster.length + 1}`}
+          </div>
+          {myRoster.length > 0 && (
+            <button style={styles.undoBtn} onClick={undoLastPick}>↩</button>
+          )}
+        </div>
       </div>
 
-      {/* Roster Need Banner */}
-      {Object.keys(rosterNeeds).length > 0 && (
-        <div style={styles.needBanner}>
-          <span style={styles.needIcon}>🎯</span>
-          {getRosterNeedLabel(rosterNeeds)}
+      {/* Alert: missing positions late in draft */}
+      {missing.length > 0 && currentRound > 10 && (
+        <div style={styles.alertBanner}>
+          ⚠️ Still need: {missing.join(', ')} — draft them before you're done!
         </div>
       )}
 
-      <div style={styles.content}>
-        {/* Left: Recommendations */}
-        <div style={styles.leftPanel}>
-          <div style={styles.panelHeader}>
-            <span style={styles.panelTitle}>Orange Picks</span>
-            <div style={styles.posFilters}>
-              {POSITIONS.map(pos => (
-                <button
-                  key={pos}
-                  style={{
-                    ...styles.posBtn,
-                    ...(posFilter === pos ? styles.posBtnActive : {}),
-                  }}
-                  onClick={() => setPosFilter(pos)}
-                >
-                  {pos}
-                </button>
-              ))}
-            </div>
+      {/* Reminder: positions not yet drafted */}
+      {missing.length > 0 && currentRound <= 10 && (
+        <div style={styles.needBanner}>
+          🎯 Open slots: {missing.join(' · ')}
+        </div>
+      )}
+
+      {/* Panel Toggle */}
+      <div style={styles.panelToggle}>
+        <button
+          style={{ ...styles.panelBtn, ...(panel === 'picks' ? styles.panelBtnActive : {}) }}
+          onClick={() => setPanel('picks')}
+        >
+          Available Players
+        </button>
+        <button
+          style={{ ...styles.panelBtn, ...(panel === 'roster' ? styles.panelBtnActive : {}) }}
+          onClick={() => setPanel('roster')}
+        >
+          My Roster ({myRoster.length})
+        </button>
+      </div>
+
+      {/* ── PICKS PANEL ── */}
+      {panel === 'picks' && (
+        <div style={styles.picksPanel}>
+
+          {/* Search */}
+          <input
+            style={styles.searchInput}
+            placeholder="🔍  Search player name..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+
+          {/* Position Filters */}
+          <div style={styles.posFilters}>
+            {POSITIONS.map(pos => (
+              <button
+                key={pos}
+                style={{ ...styles.posBtn, ...(posFilter === pos ? styles.posBtnActive : {}) }}
+                onClick={() => setPosFilter(pos)}
+              >
+                {pos}
+                {pos !== 'ALL' && urgency[pos] > 0.3 && <span style={styles.urgencyDot} />}
+              </button>
+            ))}
           </div>
 
-          {loading ? (
-            <div style={styles.loadingState}>Analyzing your roster needs...</div>
-          ) : filtered.length === 0 ? (
-            <div style={styles.emptyState}>Connect your Yahoo draft to see live picks</div>
-          ) : (
-            filtered.map((rec, i) => (
-              <PlayerCard
-                key={rec.player.id || i}
-                rec={rec}
-                onDraft={() => draftPlayer(rec.player)}
-              />
-            ))
+          {/* Player List */}
+          {filtered.slice(0, 40).map((p, i) => (
+            <div key={p.id} style={styles.playerCard}>
+              <div style={styles.playerLeft}>
+                <div style={styles.playerRank}>#{scoredPlayers.indexOf(p) + 1}</div>
+                <div>
+                  <div style={styles.playerTopRow}>
+                    <span style={getPosBadge(p.position)}>{p.position}</span>
+                    <span style={styles.playerName}>{p.name}</span>
+                  </div>
+                  <div style={styles.playerMeta}>
+                    {p.team} · ADP {p.adp.toFixed(1)} · Proj {p.projectedPts.toFixed(1)} · Bye {p.bye}
+                  </div>
+                  <div style={styles.badgeRow}>
+                    {p.isNeed && <span style={styles.needBadge}>NEED</span>}
+                    {p.isValuePick && <span style={styles.valueBadge}>VALUE</span>}
+                  </div>
+                </div>
+              </div>
+              <button style={styles.draftBtn} onClick={() => draftPlayer(p)}>
+                Draft
+              </button>
+            </div>
+          ))}
+
+          {filtered.length === 0 && (
+            <div style={styles.emptyState}>No players match that filter.</div>
           )}
         </div>
+      )}
 
-        {/* Right: My Roster */}
-        <div style={styles.rightPanel}>
-          <div style={styles.panelTitle}>My Roster ({myRoster.length})</div>
+      {/* ── ROSTER PANEL ── */}
+      {panel === 'roster' && (
+        <div style={styles.rosterPanel}>
 
+          {/* Position Need Bars */}
+          <div style={styles.needSection}>
+            <div style={styles.sectionLabel}>Position Needs</div>
+            {Object.entries(ROSTER_REQUIREMENTS).map(([pos, needed]) => {
+              const have = counts[pos] || 0;
+              const pct = Math.min(1, have / needed);
+              return (
+                <div key={pos} style={styles.needRow}>
+                  <span style={styles.needPos}>{pos}</span>
+                  <div style={styles.needBar}>
+                    <div style={{
+                      ...styles.needBarFill,
+                      width: `${pct * 100}%`,
+                      background: pct >= 1 ? '#22c55e' : pct > 0.4 ? '#f97316' : '#ef4444',
+                    }} />
+                  </div>
+                  <span style={styles.needCount}>{have}/{needed}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Drafted Players */}
+          <div style={styles.sectionLabel}>Drafted ({myRoster.length})</div>
           {myRoster.length === 0 ? (
-            <div style={styles.emptyState}>Your picks will appear here</div>
+            <div style={styles.emptyState}>No picks yet — go draft!</div>
           ) : (
             myRoster.map((p, i) => (
               <div key={i} style={styles.rosterRow}>
-                <span style={getPositionBadgeStyle(p.position)}>{p.position}</span>
-                <span style={styles.rosterName}>{p.full_name || p.name}</span>
-                <span style={styles.rosterTeam}>{p.nfl_team_abbr || p.team}</span>
+                <span style={styles.rosterRound}>R{p.draftedRound}</span>
+                <span style={getPosBadge(p.position)}>{p.position}</span>
+                <div style={styles.rosterInfo}>
+                  <div style={styles.rosterName}>{p.name}</div>
+                  <div style={styles.rosterTeam}>{p.team}</div>
+                </div>
               </div>
             ))
           )}
 
-          {/* Position Need Breakdown */}
-          {Object.keys(rosterNeeds).length > 0 && (
-            <div style={styles.needBreakdown}>
-              <div style={styles.needBreakdownTitle}>Position Needs</div>
-              {Object.entries(rosterNeeds)
-                .sort(([, a], [, b]) => b - a)
-                .map(([pos, urgency]) => (
-                  <div key={pos} style={styles.needRow}>
-                    <span style={styles.needPos}>{pos}</span>
-                    <div style={styles.needBar}>
-                      <div
-                        style={{
-                          ...styles.needBarFill,
-                          width: `${urgency * 100}%`,
-                          background: urgency > 0.7 ? '#f97316' : urgency > 0.4 ? '#facc15' : '#22c55e',
-                        }}
-                      />
-                    </div>
-                    <span style={styles.needPct}>{Math.round(urgency * 100)}%</span>
-                  </div>
-                ))}
+          {draftDone && myRoster.length > 0 && (
+            <div style={styles.draftComplete}>
+              🏆 Draft complete!
+              <button style={styles.goLineupBtn} onClick={() => router.push('/lineup')}>
+                View Lineup Tips →
+              </button>
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function PlayerCard({ rec, onDraft }) {
-  const { player, reason, isValuePick, isPositionalNeed, rank } = rec;
-
-  return (
-    <div style={styles.playerCard}>
-      <div style={styles.playerRank}>#{rank}</div>
-      <div style={styles.playerInfo}>
-        <div style={styles.playerTop}>
-          <span style={getPositionBadgeStyle(player.position)}>{player.position}</span>
-          <span style={styles.playerName}>{player.full_name || player.name}</span>
-          <span style={styles.playerTeam}>{player.nfl_team_abbr || player.team}</span>
-          {isValuePick && <span style={styles.valueBadge}>VALUE</span>}
-          {isPositionalNeed && <span style={styles.needBadge}>NEED</span>}
-        </div>
-        <div style={styles.playerADP}>ADP: {player.adp?.toFixed(1) || '—'}</div>
-        <div style={styles.playerReason}>{reason}</div>
-      </div>
-      <button style={styles.draftBtn} onClick={onDraft}>
-        Draft
-      </button>
-    </div>
-  );
-}
-
-function getPositionBadgeStyle(position) {
+function getPosBadge(position) {
   const colors = {
-    QB: { background: '#7c3aed', color: '#fff' },
-    RB: { background: '#16a34a', color: '#fff' },
-    WR: { background: '#0284c7', color: '#fff' },
-    TE: { background: '#d97706', color: '#fff' },
-    K: { background: '#6b7280', color: '#fff' },
+    QB:  { background: '#7c3aed', color: '#fff' },
+    RB:  { background: '#16a34a', color: '#fff' },
+    WR:  { background: '#0284c7', color: '#fff' },
+    TE:  { background: '#d97706', color: '#fff' },
+    K:   { background: '#6b7280', color: '#fff' },
     DEF: { background: '#dc2626', color: '#fff' },
   };
   return {
-    ...styles.posBadge,
+    fontSize: 10,
+    fontWeight: 800,
+    padding: '2px 6px',
+    borderRadius: 4,
+    flexShrink: 0,
     ...(colors[position] || { background: '#374151', color: '#fff' }),
   };
 }
@@ -206,134 +267,219 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '16px 24px',
+    padding: '14px 16px',
     borderBottom: '1px solid #1f1f1f',
     background: '#111',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10 },
-  logo: { fontSize: 24 },
-  headerTitle: { fontSize: 18, fontWeight: 700 },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 8 },
+  backBtn: {
+    background: 'transparent',
+    border: '1px solid #2a2a2a',
+    color: '#71717a',
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: 16,
+    cursor: 'pointer',
+  },
+  logo: { fontSize: 20 },
+  headerTitle: { fontSize: 17, fontWeight: 700 },
   roundBadge: {
     background: '#f97316',
     color: '#fff',
     padding: '4px 12px',
     borderRadius: 20,
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  undoBtn: {
+    background: '#1f1f1f',
+    border: '1px solid #2a2a2a',
+    color: '#a1a1aa',
+    borderRadius: 8,
+    padding: '5px 10px',
+    fontSize: 14,
+    cursor: 'pointer',
+  },
+  alertBanner: {
+    background: '#3f0000',
+    borderBottom: '1px solid #ef4444',
+    color: '#fca5a5',
     fontSize: 13,
     fontWeight: 700,
+    padding: '10px 16px',
+    textAlign: 'center',
   },
   needBanner: {
     background: '#1a1200',
     borderBottom: '1px solid #f97316',
-    padding: '10px 24px',
-    fontSize: 14,
     color: '#fbbf24',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '8px 16px',
   },
-  needIcon: { fontSize: 16 },
-  content: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 320px',
-    gap: 0,
-    minHeight: 'calc(100vh - 110px)',
-  },
-  leftPanel: { padding: 20, borderRight: '1px solid #1f1f1f' },
-  rightPanel: { padding: 20, background: '#0a0a0a' },
-  panelHeader: {
+  panelToggle: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    borderBottom: '1px solid #1f1f1f',
+    background: '#111',
+  },
+  panelBtn: {
+    flex: 1,
+    background: 'transparent',
+    border: 'none',
+    color: '#52525b',
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '12px 0',
+    cursor: 'pointer',
+    borderBottom: '2px solid transparent',
+  },
+  panelBtnActive: {
+    color: '#f97316',
+    borderBottom: '2px solid #f97316',
+  },
+  picksPanel: { padding: '12px 16px', paddingBottom: 40 },
+  rosterPanel: { padding: '12px 16px', paddingBottom: 40 },
+  searchInput: {
+    width: '100%',
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 10,
+    padding: '10px 14px',
+    fontSize: 14,
+    color: '#fff',
+    outline: 'none',
+    marginBottom: 12,
+    boxSizing: 'border-box',
+  },
+  posFilters: {
+    display: 'flex',
+    gap: 6,
+    marginBottom: 14,
     flexWrap: 'wrap',
-    gap: 8,
   },
-  panelTitle: { fontSize: 16, fontWeight: 700, marginBottom: 12 },
-  posFilters: { display: 'flex', gap: 4, flexWrap: 'wrap' },
   posBtn: {
     background: '#1f1f1f',
     border: '1px solid #2a2a2a',
     color: '#a1a1aa',
     borderRadius: 6,
-    padding: '4px 10px',
+    padding: '6px 12px',
     fontSize: 12,
     cursor: 'pointer',
-    fontWeight: 600,
+    fontWeight: 700,
+    position: 'relative',
   },
   posBtnActive: {
     background: '#f97316',
     color: '#fff',
     borderColor: '#f97316',
   },
+  urgencyDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: '#ef4444',
+  },
   playerCard: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: 12,
-    background: '#161616',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: '#141414',
     borderRadius: 10,
-    padding: '14px 16px',
+    padding: '12px 14px',
     marginBottom: 8,
-    border: '1px solid #222',
+    border: '1px solid #1f1f1f',
+    gap: 10,
   },
-  playerRank: { color: '#52525b', fontSize: 13, fontWeight: 700, minWidth: 24, paddingTop: 2 },
-  playerInfo: { flex: 1 },
-  playerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' },
-  playerName: { fontWeight: 600, fontSize: 15 },
-  playerTeam: { color: '#71717a', fontSize: 13 },
-  playerADP: { fontSize: 12, color: '#52525b', marginBottom: 4 },
-  playerReason: { fontSize: 13, color: '#a1a1aa', lineHeight: 1.4 },
+  playerLeft: { display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1 },
+  playerRank: { color: '#3f3f46', fontSize: 11, fontWeight: 700, minWidth: 22, paddingTop: 2 },
+  playerTopRow: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 },
+  playerName: { fontWeight: 700, fontSize: 14 },
+  playerMeta: { fontSize: 11, color: '#52525b', lineHeight: 1.5, marginBottom: 4 },
+  badgeRow: { display: 'flex', gap: 5 },
   draftBtn: {
     background: '#f97316',
     color: '#fff',
     border: 'none',
     borderRadius: 8,
-    padding: '8px 16px',
+    padding: '8px 14px',
     fontSize: 13,
     fontWeight: 700,
     cursor: 'pointer',
     flexShrink: 0,
+    minWidth: 60,
   },
   valueBadge: {
     background: '#16a34a',
     color: '#fff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 800,
-    padding: '2px 6px',
-    borderRadius: 4,
+    padding: '2px 5px',
+    borderRadius: 3,
     letterSpacing: '0.5px',
   },
   needBadge: {
     background: '#7c3aed',
     color: '#fff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 800,
-    padding: '2px 6px',
-    borderRadius: 4,
+    padding: '2px 5px',
+    borderRadius: 3,
     letterSpacing: '0.5px',
   },
-  posBadge: {
+  needSection: { marginBottom: 16 },
+  sectionLabel: {
     fontSize: 11,
     fontWeight: 800,
-    padding: '2px 7px',
-    borderRadius: 4,
-    letterSpacing: '0.3px',
+    color: '#52525b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: 10,
   },
+  needRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
+  needPos: { fontSize: 11, fontWeight: 800, width: 32, color: '#a1a1aa' },
+  needBar: { flex: 1, height: 6, background: '#1f1f1f', borderRadius: 3, overflow: 'hidden' },
+  needBarFill: { height: '100%', borderRadius: 3, transition: 'width 0.3s' },
+  needCount: { fontSize: 11, color: '#52525b', width: 28, textAlign: 'right' },
   rosterRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '8px 0',
+    padding: '9px 0',
     borderBottom: '1px solid #1a1a1a',
   },
-  rosterName: { flex: 1, fontSize: 14, fontWeight: 500 },
-  rosterTeam: { fontSize: 12, color: '#52525b' },
-  needBreakdown: { marginTop: 24 },
-  needBreakdownTitle: { fontSize: 13, fontWeight: 700, color: '#71717a', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px' },
-  needRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
-  needPos: { fontSize: 12, fontWeight: 700, width: 30, color: '#a1a1aa' },
-  needBar: { flex: 1, height: 6, background: '#1f1f1f', borderRadius: 3, overflow: 'hidden' },
-  needBarFill: { height: '100%', borderRadius: 3, transition: 'width 0.3s' },
-  needPct: { fontSize: 11, color: '#52525b', width: 32, textAlign: 'right' },
-  loadingState: { color: '#52525b', fontSize: 14, padding: '40px 0', textAlign: 'center' },
-  emptyState: { color: '#3f3f46', fontSize: 14, padding: '40px 0', textAlign: 'center' },
+  rosterRound: { fontSize: 10, color: '#3f3f46', fontWeight: 700, width: 22 },
+  rosterInfo: { flex: 1 },
+  rosterName: { fontSize: 13, fontWeight: 600 },
+  rosterTeam: { fontSize: 11, color: '#52525b' },
+  emptyState: { color: '#3f3f46', fontSize: 13, padding: '30px 0', textAlign: 'center' },
+  draftComplete: {
+    background: '#0a1f0a',
+    border: '1px solid #16a34a',
+    borderRadius: 10,
+    padding: '14px',
+    marginTop: 16,
+    fontSize: 13,
+    color: '#86efac',
+    textAlign: 'center',
+  },
+  goLineupBtn: {
+    display: 'block',
+    width: '100%',
+    marginTop: 10,
+    background: '#f97316',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
+    padding: '10px 0',
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
 };
