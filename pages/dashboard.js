@@ -8,15 +8,37 @@ import {
   WEEKLY_RECOMMENDATIONS,
   WAIVER_RECOMMENDATIONS,
 } from '../lib/sampleData';
+import { useTrial } from '../lib/useTrial';
+import PaywallModal from '../components/PaywallModal';
 
 export default function Dashboard() {
   const router = useRouter();
   const [view, setView] = useState('roster'); // 'roster' | 'matchup' | 'lineup' | 'standings'
 
   const myTeam = TEAMS.find(t => t.isMe);
+  const { status, daysLeft, isExpired } = useTrial();
+  const [paywallDismissed, setPaywallDismissed] = useState(false);
 
   return (
     <div style={styles.page}>
+
+      {/* Paywall Modal */}
+      {isExpired && !paywallDismissed && (
+        <PaywallModal onDismiss={() => setPaywallDismissed(true)} />
+      )}
+
+      {/* Trial Countdown Banner */}
+      {status === 'trial' && (
+        <div style={styles.trialBanner}>
+          🟠 {daysLeft} day{daysLeft !== 1 ? 's' : ''} left in your free trial —{' '}
+          <span
+            style={{ textDecoration: 'underline', cursor: 'pointer' }}
+            onClick={() => router.push('/pricing')}
+          >
+            upgrade to keep access
+          </span>
+        </div>
+      )}
 
       {/* Live Data Banner */}
       <div style={styles.banner}>
@@ -303,6 +325,15 @@ const styles = {
     color: '#fff',
     fontFamily: "'Inter', -apple-system, sans-serif",
     paddingBottom: 100,
+  },
+  trialBanner: {
+    background: '#1a0e00',
+    borderBottom: '1px solid #7c2d12',
+    color: '#fb923c',
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '10px 16px',
+    textAlign: 'center',
   },
   banner: {
     background: '#1c1200',
