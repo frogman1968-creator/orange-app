@@ -1,33 +1,7 @@
-import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { getSleeperUser } from '../lib/sleeper';
 
 export default function Home() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  async function handleConnect(e) {
-    e.preventDefault();
-    if (!username.trim()) return;
-    setLoading(true);
-    setError('');
-    try {
-      const user = await getSleeperUser(username.trim());
-      if (!user || !user.user_id) {
-        setError('Sleeper username not found. Check your spelling and try again.');
-        return;
-      }
-      // Store user in localStorage and go to dashboard
-      localStorage.setItem('sleeper_user', JSON.stringify(user));
-      router.push(`/dashboard?userId=${user.user_id}`);
-    } catch (err) {
-      setError('Could not connect. Check your Sleeper username and try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <div style={styles.page}>
@@ -59,22 +33,13 @@ export default function Home() {
           ))}
         </div>
 
-        <form onSubmit={handleConnect} style={styles.connectForm}>
-          <input
-            type="text"
-            placeholder="Your Sleeper username"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect="off"
-          />
-          <button type="submit" style={styles.ctaButton} disabled={loading}>
-            {loading ? 'Connecting...' : 'Connect Sleeper →'}
-          </button>
-        </form>
+        <button
+          onClick={() => router.push('/dashboard')}
+          style={styles.ctaButton}
+        >
+          Enter Footagio League →
+        </button>
 
-        {error && <p style={styles.error}>{error}</p>}
         <p style={styles.disclaimer}>Free to try. No credit card required.</p>
       </div>
     </div>
@@ -104,14 +69,6 @@ const FEATURES = [
   },
 ];
 
-function LoadingScreen() {
-  return (
-    <div style={{ ...styles.page, justifyContent: 'center', alignItems: 'center' }}>
-      <div style={styles.logoCircle}>🟠</div>
-    </div>
-  );
-}
-
 const styles = {
   page: {
     minHeight: '100vh',
@@ -140,9 +97,7 @@ const styles = {
     gap: 10,
     marginBottom: 8,
   },
-  logoCircle: {
-    fontSize: 36,
-  },
+  logoCircle: { fontSize: 36 },
   logoText: {
     fontSize: 28,
     fontWeight: 700,
@@ -156,9 +111,7 @@ const styles = {
     letterSpacing: '-1px',
     margin: 0,
   },
-  accent: {
-    color: '#f97316',
-  },
+  accent: { color: '#f97316' },
   sub: {
     fontSize: 18,
     color: '#a1a1aa',
@@ -182,20 +135,9 @@ const styles = {
     textAlign: 'left',
     border: '1px solid #2a2a2a',
   },
-  featureIcon: {
-    fontSize: 28,
-    flexShrink: 0,
-  },
-  featureTitle: {
-    fontWeight: 600,
-    fontSize: 15,
-    marginBottom: 2,
-  },
-  featureSub: {
-    fontSize: 13,
-    color: '#71717a',
-    lineHeight: 1.4,
-  },
+  featureIcon: { fontSize: 28, flexShrink: 0 },
+  featureTitle: { fontWeight: 600, fontSize: 15, marginBottom: 2 },
+  featureSub: { fontSize: 13, color: '#71717a', lineHeight: 1.4 },
   ctaButton: {
     background: '#f97316',
     color: '#fff',
@@ -207,29 +149,7 @@ const styles = {
     cursor: 'pointer',
     marginTop: 8,
     letterSpacing: '-0.2px',
-  },
-  connectForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
     width: '100%',
-    marginTop: 8,
-  },
-  input: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    borderRadius: 12,
-    padding: '14px 18px',
-    fontSize: 16,
-    color: '#fff',
-    outline: 'none',
-    width: '100%',
-  },
-  error: {
-    fontSize: 13,
-    color: '#ef4444',
-    margin: 0,
-    textAlign: 'center',
   },
   disclaimer: {
     fontSize: 13,

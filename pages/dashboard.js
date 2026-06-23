@@ -1,102 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  getUserLeagues,
-  getLeagueRosters,
-  getLeagueUsers,
-  getLeagueMatchups,
-  getNFLState,
-  getAllPlayers,
-  buildRosterMap,
-  getPlayerDetails,
-  getTrendingPlayers,
-} from '../lib/sleeper';
+  LEAGUE,
+  TEAMS,
+  MY_ROSTER,
+  CURRENT_MATCHUP,
+  WEEKLY_RECOMMENDATIONS,
+  WAIVER_RECOMMENDATIONS,
+} from '../lib/sampleData';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { userId } = router.query;
+  const [view, setView] = useState('roster'); // 'roster' | 'matchup' | 'lineup' | 'standings'
 
-  const [user, setUser] = useState(null);
-  const [leagues, setLeagues] = useState([]);
-  const [selectedLeague, setSelectedLeague] = useState(null);
-  const [rosters, setRosters] = useState([]);
-  const [myRoster, setMyRoster] = useState(null);
-  const [matchups, setMatchups] = useState([]);
-  const [myMatchup, setMyMatchup] = useState(null);
-  const [allPlayers, setAllPlayers] = useState({});
-  const [trending, setTrending] = useState([]);
-  const [nflState, setNflState] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('roster'); // 'roster' | 'matchup' | 'trending'
-
-  useEffect(() => {
-    if (!userId) return;
-    const stored = localStorage.getItem('sleeper_user');
-    if (stored) setUser(JSON.parse(stored));
-    loadDashboard();
-  }, [userId]);
-
-  async function loadDashboard() {
-    setLoading(true);
-    try {
-      const [leaguesData, nflStateData, trendingData] = await Promise.all([
-        getUserLeagues(userId, '2025'),
-        getNFLState(),
-        getTrendingPlayers('add'),
-      ]);
-
-      setLeagues(leaguesData || []);
-      setNflState(nflStateData);
-      setTrending(trendingData || []);
-
-      // Auto-select first league
-      if (leaguesData?.length > 0) {
-        await loadLeague(leaguesData[0], nflStateData);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadLeague(league, state) {
-    setSelectedLeague(league);
-    const week = state?.week || 1;
-
-    const [rostersData, usersData, matchupsData, playersData] = await Promise.all([
-      getLeagueRosters(league.league_id),
-      getLeagueUsers(league.league_id),
-      getLeagueMatchups(league.league_id, week),
-      Object.keys(allPlayers).length === 0 ? getAllPlayers() : Promise.resolve(allPlayers),
-    ]);
-
-    if (Object.keys(allPlayers).length === 0) setAllPlayers(playersData || {});
-
-    const rosterMap = buildRosterMap(rostersData, usersData);
-    setRosters(rosterMap);
-
-    // Find my roster
-    const mine = rosterMap.find(r => r.ownerId === userId);
-    setMyRoster(mine);
-
-    // Find my matchup
-    if (mine && matchupsData) {
-      const myMatchupData = matchupsData.find(m => m.roster_id === mine.rosterId);
-      if (myMatchupData) {
-        const opponent = matchupsData.find(
-          m => m.matchup_id === myMatchupData.matchup_id && m.roster_id !== mine.rosterId
-        );
-        const opponentRoster = rosterMap.find(r => r.rosterId === opponent?.roster_id);
-        setMyMatchup({ mine: myMatchupData, opponent, opponentRoster });
-      }
-    }
-
-    setMatchups(matchupsData || []);
-  }
-
-  if (loading) return <LoadingScreen />;
+  const myTeam = TEAMS.find(t => t.isMe);
 
   return (
     <div style={styles.page}>
+
+      {/* Live Data Banner */}
+      <div style={styles.banner}>
+        🕐 Yahoo API approval in progress — showing Footagio League preview data. Live data syncs automatically when approved.
+      </div>
+
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
@@ -104,91 +30,75 @@ export default function Dashboard() {
           <span style={styles.headerTitle}>Orange</span>
         </div>
         <div style={styles.headerRight}>
-          {user && (
-            <div style={styles.userBadge}>
-              {user.display_name || user.username}
-            </div>
-          )}
-          {nflState && (
-            <div style={styles.weekBadge}>Week {nflState.week}</div>
-          )}
+          <div style={styles.userBadge}>Frogman68</div>
+          <div style={styles.weekBadge}>Week {CURRENT_MATCHUP.week}</div>
         </div>
       </div>
 
-      {/* League Selector */}
-      {leagues.length > 1 && (
-        <div style={styles.leagueBar}>
-          {leagues.map(l => (
-            <button
-              key={l.league_id}
-              style={{
-                ...styles.leagueBtn,
-                ...(selectedLeague?.league_id === l.league_id ? styles.leagueBtnActive : {}),
-              }}
-              onClick={() => loadLeague(l, nflState)}
-            >
-              {l.name}
-            </button>
+      {/* League Header */}
+      <div style={styles.leagueHeader}>
+        <div style={styles.leagueName}>{LEAGUE.name}</div>
+        <div style={styles.leagueMeta}>{LEAGUE.numTeams} teams · {LEAGUE.scoringType} · Yahoo</div>
+      </div>
+
+      {/* My Team Summary Card */}
+      <div style={styles.myTeamCard}>
+        <div style={styles.myTeamLeft}>
+          <div style={styles.myTeamName}>{myTeam.name}</div>
+          <div style={styles.myTeamRecord}>{myTeam.wins}-{myTeam.losses} · {myTeam.pf.toFixed(1)} pts for</div>
+        </div>
+        <div style={styles.myTeamRight}>
+          <div style={styles.myTeamRank}>🏆 #1 in League</div>
+        </div>
+      </div>
+
+      {/* View Toggle */}
+      <div style={styles.viewToggle}>
+        {[
+          { key: 'roster',    label: '📋 Roster' },
+          { key: 'matchup',   label: '⚔️ Matchup' },
+          { key: 'lineup',    label: '💡 Lineup Tips' },
+          { key: 'standings', label: '📊 Standings' },
+        ].map(v => (
+          <button
+            key={v.key}
+            style={{ ...styles.toggleBtn, ...(view === v.key ? styles.toggleActive : {}) }}
+            onClick={() => setView(v.key)}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Views */}
+      {view === 'roster'    && <RosterView />}
+      {view === 'matchup'   && <MatchupView />}
+      {view === 'lineup'    && <LineupView />}
+      {view === 'standings' && <StandingsView />}
+
+      {/* Waiver Wire */}
+      {view === 'roster' && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>🔔 Waiver Wire Moves</div>
+          {WAIVER_RECOMMENDATIONS.map((w, i) => (
+            <div key={i} style={styles.waiverRow}>
+              <div style={styles.waiverPlayers}>
+                <span style={styles.waiverAdd}>+ {w.addPlayer.name}</span>
+                <span style={getPosBadge(w.addPlayer.position)}>{w.addPlayer.position}</span>
+                {w.dropPlayer && (
+                  <>
+                    <span style={styles.waiverDrop}>− {w.dropPlayer.name}</span>
+                    <span style={getPosBadge(w.dropPlayer.position)}>{w.dropPlayer.position}</span>
+                  </>
+                )}
+              </div>
+              <div style={styles.waiverReason}>{w.reason}</div>
+            </div>
           ))}
         </div>
       )}
 
-      {selectedLeague && (
-        <>
-          <div style={styles.leagueHeader}>
-            <div style={styles.leagueName}>{selectedLeague.name}</div>
-            <div style={styles.leagueMeta}>
-              {selectedLeague.total_rosters} teams · {selectedLeague.settings?.type === 2 ? 'Dynasty' : selectedLeague.scoring_settings?.rec === 1 ? 'PPR' : 'Standard'}
-            </div>
-          </div>
-
-          {/* View Toggle */}
-          <div style={styles.viewToggle}>
-            {['roster', 'matchup', 'trending'].map(v => (
-              <button
-                key={v}
-                style={{ ...styles.toggleBtn, ...(view === v ? styles.toggleActive : {}) }}
-                onClick={() => setView(v)}
-              >
-                {v === 'roster' ? '📋 Roster' : v === 'matchup' ? '⚔️ Matchup' : '🔥 Trending'}
-              </button>
-            ))}
-          </div>
-
-          {/* Views */}
-          {view === 'roster' && myRoster && (
-            <RosterView roster={myRoster} allPlayers={allPlayers} />
-          )}
-          {view === 'matchup' && (
-            <MatchupView matchup={myMatchup} allPlayers={allPlayers} />
-          )}
-          {view === 'trending' && (
-            <TrendingView trending={trending} allPlayers={allPlayers} />
-          )}
-        </>
-      )}
-
-      {/* Standings */}
-      {rosters.length > 0 && (
-        <div style={styles.standingsWrap}>
-          <div style={styles.sectionTitle}>Standings</div>
-          {rosters
-            .sort((a, b) => b.wins - a.wins || b.pointsFor - a.pointsFor)
-            .map((r, i) => (
-              <div key={r.rosterId} style={{
-                ...styles.standingRow,
-                ...(r.ownerId === userId ? styles.standingRowMine : {}),
-              }}>
-                <span style={styles.standingRank}>{i + 1}</span>
-                <span style={styles.standingName}>{r.displayName}</span>
-                <span style={styles.standingRecord}>{r.wins}-{r.losses}</span>
-                <span style={styles.standingPts}>{r.pointsFor?.toFixed(1)} pts</span>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Nav */}
+      {/* Bottom Nav */}
       <div style={styles.bottomNav}>
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
         <button style={styles.navBtn} onClick={() => router.push('/lineup')}>📊 Lineup</button>
@@ -198,110 +108,180 @@ export default function Dashboard() {
   );
 }
 
-function RosterView({ roster, allPlayers }) {
-  const starters = roster.starters?.map(id => getPlayerDetails(id, allPlayers)).filter(Boolean);
-  const bench = roster.players
-    ?.filter(id => !roster.starters?.includes(id))
-    .map(id => getPlayerDetails(id, allPlayers)).filter(Boolean);
+// ─── Roster View ──────────────────────────────────────────────────────────────
 
+function RosterView() {
   return (
-    <div style={styles.content}>
+    <div style={styles.section}>
       <div style={styles.sectionTitle}>Starters</div>
-      {starters?.map((p, i) => <PlayerRow key={i} player={p} isStarter />)}
+      {MY_ROSTER.starters.map(p => <PlayerRow key={p.id} player={p} isStarter />)}
       <div style={{ ...styles.sectionTitle, marginTop: 20 }}>Bench</div>
-      {bench?.map((p, i) => <PlayerRow key={i} player={p} />)}
+      {MY_ROSTER.bench.map(p => <PlayerRow key={p.id} player={p} />)}
     </div>
   );
 }
 
-function MatchupView({ matchup, allPlayers }) {
-  if (!matchup) return (
-    <div style={styles.emptyState}>No matchup data available for this week.</div>
-  );
+// ─── Matchup View ─────────────────────────────────────────────────────────────
+
+function MatchupView() {
+  const m = CURRENT_MATCHUP;
+  const winning = m.myScore > m.opponent.score;
 
   return (
-    <div style={styles.content}>
+    <div style={styles.section}>
       <div style={styles.matchupHeader}>
-        <div style={styles.matchupTeam}>
-          <div style={styles.matchupScore}>{matchup.mine?.points?.toFixed(2) || '0.00'}</div>
-          <div style={styles.matchupTeamName}>You</div>
+        <div style={styles.matchupSide}>
+          <div style={{ ...styles.matchupScore, color: winning ? '#22c55e' : '#f97316' }}>
+            {m.myScore.toFixed(2)}
+          </div>
+          <div style={styles.matchupTeamName}>Frogman's Squad</div>
+          <div style={styles.matchupProjected}>Proj: {m.myProjected.toFixed(1)}</div>
         </div>
         <div style={styles.matchupVs}>VS</div>
-        <div style={styles.matchupTeam}>
-          <div style={styles.matchupScore}>{matchup.opponent?.points?.toFixed(2) || '0.00'}</div>
-          <div style={styles.matchupTeamName}>{matchup.opponentRoster?.displayName || 'Opponent'}</div>
+        <div style={styles.matchupSide}>
+          <div style={{ ...styles.matchupScore, color: winning ? '#f97316' : '#ef4444' }}>
+            {m.opponent.score.toFixed(2)}
+          </div>
+          <div style={styles.matchupTeamName}>{m.opponent.name}</div>
+          <div style={styles.matchupProjected}>Proj: {m.opponent.projected.toFixed(1)}</div>
         </div>
       </div>
 
-      <div style={styles.sectionTitle}>Your Starters</div>
-      {matchup.mine?.starters?.map((id, i) => {
-        const p = getPlayerDetails(id, allPlayers);
-        const pts = matchup.mine?.starters_points?.[i];
-        return p ? <PlayerRow key={i} player={p} isStarter points={pts} /> : null;
-      })}
-    </div>
-  );
-}
+      <div style={styles.edgeBar}>
+        <span style={styles.edgeLabel}>Your edge:</span>
+        <span style={styles.edgeValue}>+{(m.myProjected - m.opponent.projected).toFixed(1)} projected pts</span>
+      </div>
 
-function TrendingView({ trending, allPlayers }) {
-  return (
-    <div style={styles.content}>
-      <div style={styles.sectionTitle}>🔥 Trending Adds</div>
-      {trending.slice(0, 15).map((t, i) => {
-        const p = getPlayerDetails(t.player_id, allPlayers);
-        return p ? (
-          <div key={i} style={styles.trendRow}>
-            <span style={styles.trendRank}>#{i + 1}</span>
-            <span style={getPosBadge(p.position)}>{p.position}</span>
-            <div style={styles.trendInfo}>
-              <div style={styles.trendName}>{p.name}</div>
-              <div style={styles.trendTeam}>{p.team}</div>
-            </div>
-            <div style={styles.trendAdds}>+{t.adds?.toLocaleString()}</div>
+      <div style={styles.sectionTitle}>Opponent Weaknesses</div>
+      <div style={styles.weaknessGrid}>
+        {Object.entries(m.opponentWeaknesses).map(([pos, grade]) => (
+          <div key={pos} style={styles.weaknessCard}>
+            <span style={getPosBadge(pos)}>{pos}</span>
+            <span style={{ ...styles.gradeTag, color: gradeColor(grade) }}>{grade}</span>
           </div>
-        ) : null;
-      })}
+        ))}
+      </div>
+
+      <div style={styles.sectionTitle}>Opponent Starters</div>
+      {m.opponent.starters.map(p => (
+        <div key={p.id} style={styles.playerRow}>
+          <span style={getPosBadge(p.position)}>{p.position}</span>
+          <div style={styles.playerInfo}>
+            <div style={styles.playerName}>{p.name}</div>
+            <div style={styles.playerTeam}>{p.team}</div>
+          </div>
+          <div style={styles.playerPoints}>{p.projectedPts.toFixed(1)}</div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function PlayerRow({ player, isStarter, points }) {
+// ─── Lineup Tips View ────────────────────────────────────────────────────────
+
+function LineupView() {
   return (
-    <div style={{ ...styles.playerRow, opacity: isStarter ? 1 : 0.7 }}>
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>Start / Sit Recommendations</div>
+      {WEEKLY_RECOMMENDATIONS.map((rec, i) => (
+        <div key={i} style={styles.recRow}>
+          <div style={styles.recLeft}>
+            <span style={getPosBadge(rec.player.position)}>{rec.player.position}</span>
+            <div style={styles.recInfo}>
+              <div style={styles.recName}>
+                {rec.player.name}
+                {rec.injuryFlag && <span style={styles.injuryTag}> ⚠️</span>}
+              </div>
+              <div style={styles.recTeam}>{rec.player.team}</div>
+            </div>
+          </div>
+          <div style={styles.recRight}>
+            <span style={{ ...styles.recBadge, background: recColor(rec.recommendation) }}>
+              {rec.recommendation.toUpperCase()}
+            </span>
+            <span style={{ ...styles.gradeTag, color: gradeColor(rec.matchupGrade), marginLeft: 6 }}>
+              {rec.matchupGrade}
+            </span>
+          </div>
+          <div style={styles.recReason}>{rec.reason}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Standings View ───────────────────────────────────────────────────────────
+
+function StandingsView() {
+  const sorted = [...TEAMS].sort((a, b) => b.wins - a.wins || b.pf - a.pf);
+  return (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>League Standings</div>
+      {sorted.map((t, i) => (
+        <div
+          key={t.id}
+          style={{
+            ...styles.standingRow,
+            ...(t.isMe ? styles.standingRowMine : {}),
+          }}
+        >
+          <span style={styles.standingRank}>{i + 1}</span>
+          <div style={styles.standingInfo}>
+            <div style={styles.standingName}>{t.name} {t.isMe && '⭐'}</div>
+            <div style={styles.standingOwner}>{t.owner}</div>
+          </div>
+          <span style={styles.standingRecord}>{t.wins}-{t.losses}</span>
+          <span style={styles.standingPts}>{t.pf.toFixed(1)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Player Row ───────────────────────────────────────────────────────────────
+
+function PlayerRow({ player, isStarter }) {
+  return (
+    <div style={{ ...styles.playerRow, opacity: isStarter ? 1 : 0.72 }}>
       <span style={getPosBadge(player.position)}>{player.position}</span>
       <div style={styles.playerInfo}>
         <div style={styles.playerName}>
           {player.name}
-          {player.status && player.status !== 'active' && (
+          {player.injuryNote && (
+            <span style={styles.injuryTag}> ⚠️ {player.injuryNote}</span>
+          )}
+          {player.status && player.status !== 'active' && !player.injuryNote && (
             <span style={styles.injuryTag}> {player.status.toUpperCase()}</span>
           )}
         </div>
-        <div style={styles.playerTeam}>{player.team || 'FA'}</div>
+        <div style={styles.playerTeam}>{player.team}</div>
       </div>
-      {points !== undefined && (
-        <div style={styles.playerPoints}>{points?.toFixed(2)}</div>
-      )}
+      <div style={styles.playerRight}>
+        <div style={styles.playerPoints}>{player.projectedPts.toFixed(1)}</div>
+        <div style={styles.playerLastWeek}>last: {player.lastWeekPts.toFixed(1)}</div>
+      </div>
     </div>
   );
 }
 
-function LoadingScreen() {
-  return (
-    <div style={{ ...styles.page, justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ fontSize: 48 }}>🟠</div>
-      <div style={{ color: '#52525b', marginTop: 16 }}>Loading your leagues...</div>
-    </div>
-  );
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function gradeColor(grade) {
+  return { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#ef4444', F: '#7f1d1d' }[grade] || '#71717a';
+}
+
+function recColor(rec) {
+  return { start: '#22c55e', sit: '#ef4444', monitor: '#f59e0b' }[rec] || '#52525b';
 }
 
 function getPosBadge(position) {
   const colors = {
-    QB: { background: '#7c3aed', color: '#fff' },
-    RB: { background: '#16a34a', color: '#fff' },
-    WR: { background: '#0284c7', color: '#fff' },
-    TE: { background: '#d97706', color: '#fff' },
-    K: { background: '#6b7280', color: '#fff' },
-    DEF: { background: '#dc2626', color: '#fff' },
+    QB:   { background: '#7c3aed', color: '#fff' },
+    RB:   { background: '#16a34a', color: '#fff' },
+    WR:   { background: '#0284c7', color: '#fff' },
+    TE:   { background: '#d97706', color: '#fff' },
+    K:    { background: '#6b7280', color: '#fff' },
+    DEF:  { background: '#dc2626', color: '#fff' },
     FLEX: { background: '#475569', color: '#fff' },
   };
   return {
@@ -314,19 +294,31 @@ function getPosBadge(position) {
   };
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = {
   page: {
     minHeight: '100vh',
     background: '#0f0f0f',
     color: '#fff',
     fontFamily: "'Inter', -apple-system, sans-serif",
-    paddingBottom: 80,
+    paddingBottom: 100,
+  },
+  banner: {
+    background: '#1c1200',
+    borderBottom: '1px solid #f97316',
+    color: '#f97316',
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '10px 16px',
+    textAlign: 'center',
+    lineHeight: 1.4,
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '16px 20px',
+    padding: '14px 20px',
     borderBottom: '1px solid #1f1f1f',
     background: '#111',
     position: 'sticky',
@@ -346,32 +338,29 @@ const styles = {
     fontSize: 12,
     fontWeight: 700,
   },
-  leagueBar: {
-    display: 'flex',
-    gap: 8,
-    padding: '12px 20px',
-    overflowX: 'auto',
-    borderBottom: '1px solid #1f1f1f',
-  },
-  leagueBtn: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    color: '#71717a',
-    borderRadius: 20,
-    padding: '6px 14px',
-    fontSize: 13,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    fontWeight: 500,
-  },
-  leagueBtnActive: { background: '#f97316', color: '#fff', borderColor: '#f97316' },
-  leagueHeader: { padding: '16px 20px 8px' },
+  leagueHeader: { padding: '14px 20px 4px' },
   leagueName: { fontSize: 18, fontWeight: 800 },
   leagueMeta: { fontSize: 13, color: '#71717a', marginTop: 2 },
+  myTeamCard: {
+    margin: '12px 20px',
+    background: '#1a1200',
+    border: '1px solid #f97316',
+    borderRadius: 12,
+    padding: '14px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  myTeamLeft: {},
+  myTeamName: { fontSize: 15, fontWeight: 800 },
+  myTeamRecord: { fontSize: 12, color: '#a1a1aa', marginTop: 2 },
+  myTeamRight: {},
+  myTeamRank: { fontSize: 13, fontWeight: 700, color: '#f97316' },
   viewToggle: {
     display: 'flex',
-    padding: '0 20px 12px',
+    padding: '8px 20px 12px',
     gap: 8,
+    overflowX: 'auto',
   },
   toggleBtn: {
     background: '#1a1a1a',
@@ -382,17 +371,18 @@ const styles = {
     fontSize: 13,
     cursor: 'pointer',
     fontWeight: 500,
+    whiteSpace: 'nowrap',
   },
   toggleActive: { background: '#f97316', color: '#fff', borderColor: '#f97316' },
-  content: { padding: '0 20px' },
+  section: { padding: '4px 20px' },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 800,
     color: '#52525b',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.6px',
     marginBottom: 8,
-    marginTop: 4,
+    marginTop: 16,
   },
   playerRow: {
     display: 'flex',
@@ -403,9 +393,11 @@ const styles = {
   },
   playerInfo: { flex: 1 },
   playerName: { fontSize: 14, fontWeight: 600 },
-  playerTeam: { fontSize: 12, color: '#52525b' },
+  playerTeam: { fontSize: 12, color: '#52525b', marginTop: 1 },
+  playerRight: { textAlign: 'right' },
   playerPoints: { fontSize: 15, fontWeight: 700, color: '#f97316' },
-  injuryTag: { color: '#ef4444', fontSize: 10, fontWeight: 800 },
+  playerLastWeek: { fontSize: 11, color: '#52525b', marginTop: 2 },
+  injuryTag: { color: '#ef4444', fontSize: 11, fontWeight: 700 },
   matchupHeader: {
     display: 'flex',
     alignItems: 'center',
@@ -413,26 +405,72 @@ const styles = {
     background: '#161616',
     borderRadius: 12,
     padding: '20px',
-    marginBottom: 20,
+    marginTop: 12,
+    marginBottom: 16,
     border: '1px solid #222',
   },
-  matchupTeam: { textAlign: 'center', flex: 1 },
-  matchupScore: { fontSize: 32, fontWeight: 800, color: '#f97316' },
-  matchupTeamName: { fontSize: 13, color: '#71717a', marginTop: 4 },
-  matchupVs: { fontSize: 14, fontWeight: 800, color: '#3f3f46', padding: '0 12px' },
-  trendRow: {
+  matchupSide: { textAlign: 'center', flex: 1 },
+  matchupScore: { fontSize: 34, fontWeight: 800 },
+  matchupTeamName: { fontSize: 12, color: '#71717a', marginTop: 4 },
+  matchupProjected: { fontSize: 11, color: '#52525b', marginTop: 2 },
+  matchupVs: { fontSize: 13, fontWeight: 800, color: '#3f3f46', padding: '0 12px' },
+  edgeBar: {
+    background: '#0a1f0a',
+    border: '1px solid #16a34a',
+    borderRadius: 8,
+    padding: '8px 14px',
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: '10px 0',
-    borderBottom: '1px solid #1a1a1a',
+    gap: 8,
+    marginBottom: 12,
   },
-  trendRank: { fontSize: 12, color: '#52525b', width: 24 },
-  trendInfo: { flex: 1 },
-  trendName: { fontSize: 14, fontWeight: 600 },
-  trendTeam: { fontSize: 12, color: '#52525b' },
-  trendAdds: { fontSize: 13, color: '#22c55e', fontWeight: 700 },
-  standingsWrap: { padding: '20px 20px 0' },
+  edgeLabel: { fontSize: 12, color: '#71717a' },
+  edgeValue: { fontSize: 13, fontWeight: 700, color: '#22c55e' },
+  weaknessGrid: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 16,
+  },
+  weaknessCard: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 8,
+    padding: '6px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  gradeTag: { fontSize: 15, fontWeight: 800 },
+  recRow: {
+    background: '#141414',
+    borderRadius: 10,
+    padding: '12px 14px',
+    marginBottom: 8,
+    border: '1px solid #1f1f1f',
+  },
+  recLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  recRight: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recInfo: { flex: 1 },
+  recName: { fontSize: 14, fontWeight: 700 },
+  recTeam: { fontSize: 12, color: '#52525b', marginTop: 1 },
+  recBadge: {
+    fontSize: 10,
+    fontWeight: 800,
+    color: '#fff',
+    padding: '2px 8px',
+    borderRadius: 4,
+  },
+  recReason: { fontSize: 12, color: '#a1a1aa', lineHeight: 1.5 },
   standingRow: {
     display: 'flex',
     alignItems: 'center',
@@ -442,11 +480,29 @@ const styles = {
     marginBottom: 4,
   },
   standingRowMine: { background: '#1a1200', border: '1px solid #f97316' },
-  standingRank: { fontSize: 13, color: '#52525b', width: 20 },
-  standingName: { flex: 1, fontSize: 14, fontWeight: 500 },
-  standingRecord: { fontSize: 13, color: '#71717a', width: 40, textAlign: 'center' },
+  standingRank: { fontSize: 13, color: '#52525b', width: 20, textAlign: 'center' },
+  standingInfo: { flex: 1 },
+  standingName: { fontSize: 14, fontWeight: 600 },
+  standingOwner: { fontSize: 11, color: '#52525b' },
+  standingRecord: { fontSize: 13, color: '#71717a', width: 44, textAlign: 'center' },
   standingPts: { fontSize: 13, color: '#f97316', fontWeight: 600, width: 70, textAlign: 'right' },
-  emptyState: { padding: '40px 20px', textAlign: 'center', color: '#3f3f46', fontSize: 14 },
+  waiverRow: {
+    background: '#0d1117',
+    border: '1px solid #1f2937',
+    borderRadius: 10,
+    padding: '12px 14px',
+    marginBottom: 8,
+  },
+  waiverPlayers: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 6,
+  },
+  waiverAdd: { fontSize: 13, fontWeight: 700, color: '#22c55e' },
+  waiverDrop: { fontSize: 13, fontWeight: 700, color: '#ef4444', marginLeft: 8 },
+  waiverReason: { fontSize: 12, color: '#71717a', lineHeight: 1.4 },
   bottomNav: {
     position: 'fixed',
     bottom: 0,
