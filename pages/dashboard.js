@@ -127,6 +127,7 @@ export default function Dashboard() {
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
         <button style={styles.navBtn} onClick={() => router.push('/lineup')}>📊 Lineup</button>
         <button style={{ ...styles.navBtn, ...styles.navBtnActive }}>🏠 Home</button>
+        <button style={styles.navBtn} onClick={() => router.push('/news')}>📰 News</button>
         <button style={styles.navBtn} onClick={() => router.push('/trade')}>⚖️ Trade</button>
         <button style={styles.navBtn} onClick={() => router.push('/account')}>👤 Account</button>
       </div>
