@@ -1,7 +1,16 @@
+import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 
 export default function Home() {
   const router = useRouter();
+
+  useEffect(() => {
+    const onboarded = localStorage.getItem('orange_onboarded');
+    if (!onboarded) {
+      router.replace('/onboarding');
+    }
+  }, []);
+
 
   return (
     <div style={styles.page}>
