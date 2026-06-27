@@ -131,6 +131,12 @@ export default function Account() {
         >
           Y! Manage Yahoo Connection
         </button>
+        <button
+          style={{ ...styles.manageBtn, marginTop: 8 }}
+          onClick={() => router.push('/notifications')}
+        >
+          🔔 Notification Settings
+        </button>
       </div>
 
       {/* Sign Out */}
