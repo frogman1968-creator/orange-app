@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import {
   MY_ROSTER,
@@ -17,6 +17,10 @@ export default function LineupOptimizer() {
   const [view, setView] = useState('startsit');
   const [moreInfoPlayer, setMoreInfoPlayer] = useState(null);
   const [swapped, setSwapped] = useState({});
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <PageSkeleton />;
 
   const weekData   = SCHEDULE[selectedWeek] || SCHEDULE[CURRENT_WEEK];
   const weekRecs   = WEEKLY_RECS[selectedWeek] || WEEKLY_RECS[CURRENT_WEEK];
@@ -471,6 +475,22 @@ function getPosBadge(position) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+
+function PageSkeleton() {
+  return (
+    <div style={{ background: '#0a0a0a', minHeight: '100vh', padding: 16 }}>
+      <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+      {[1,2,3,4,5,6,7,8].map(i => (
+        <div key={i} style={{
+          height: 56, borderRadius: 10, marginBottom: 12,
+          background: 'linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%)',
+          backgroundSize: '200% 100%',
+          animation: 'shimmer 1.4s infinite',
+        }} />
+      ))}
+    </div>
+  );
+}
 
 const styles = {
   page: {

@@ -19,6 +19,8 @@ export default function Dashboard() {
   const { status, daysLeft, isExpired } = useTrial();
   const [paywallDismissed, setPaywallDismissed] = useState(false);
 
+  if (status === 'loading') return <DashboardSkeleton />;
+
   return (
     <div style={styles.page}>
 
@@ -317,6 +319,66 @@ function getPosBadge(position) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+
+// ─── Dashboard Skeleton ────────────────────────────────────────────────────────
+
+function Bone({ width = '100%', height = 16, radius = 6, mb = 0 }) {
+  return (
+    <div style={{
+      width, height,
+      borderRadius: radius,
+      background: 'linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%)',
+      backgroundSize: '200% 100%',
+      animation: 'shimmer 1.4s infinite',
+      marginBottom: mb,
+    }} />
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div style={{ background: '#0a0a0a', minHeight: '100vh' }}>
+      <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+
+      {/* Header */}
+      <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1a1a1a' }}>
+        <Bone width={80} height={24} radius={4} />
+        <Bone width={60} height={20} radius={10} />
+      </div>
+
+      {/* League header */}
+      <div style={{ padding: '12px 16px' }}>
+        <Bone width={160} height={18} radius={4} mb={6} />
+        <Bone width={120} height={13} radius={4} />
+      </div>
+
+      {/* Team card */}
+      <div style={{ margin: '0 16px 16px', background: '#141414', borderRadius: 12, padding: 16 }}>
+        <Bone width={140} height={18} radius={4} mb={8} />
+        <Bone width={100} height={13} radius={4} />
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 8, padding: '0 16px 16px' }}>
+        {[90, 80, 100, 90].map((w, i) => <Bone key={i} width={w} height={32} radius={8} />)}
+      </div>
+
+      {/* Player rows */}
+      <div style={{ padding: '0 16px' }}>
+        {[1,2,3,4,5,6].map(i => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <Bone width={36} height={36} radius={18} />
+            <div style={{ flex: 1 }}>
+              <Bone width="60%" height={14} radius={4} mb={6} />
+              <Bone width="40%" height={11} radius={4} />
+            </div>
+            <Bone width={36} height={20} radius={4} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const styles = {
   page: {

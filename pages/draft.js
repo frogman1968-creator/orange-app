@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { DRAFT_POOL, ROSTER_REQUIREMENTS } from '../lib/sampleData';
 
@@ -121,6 +121,9 @@ export default function DraftCompanion() {
   const [posFilter, setPosFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [panel, setPanel] = useState('picks');
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <PageSkeleton />;
 
   const myPickSlots = useMemo(
     () => getSnakePickSlots(draftPosition, numTeams, totalRounds),
@@ -475,6 +478,22 @@ function getPosBadge(position) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+
+function PageSkeleton() {
+  return (
+    <div style={{ background: '#0a0a0a', minHeight: '100vh', padding: 16 }}>
+      <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+      {[1,2,3,4,5,6,7,8].map(i => (
+        <div key={i} style={{
+          height: 56, borderRadius: 10, marginBottom: 12,
+          background: 'linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%)',
+          backgroundSize: '200% 100%',
+          animation: 'shimmer 1.4s infinite',
+        }} />
+      ))}
+    </div>
+  );
+}
 
 const styles = {
   page: {
