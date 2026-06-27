@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { useTrial } from '../lib/useTrial';
 import {
   MY_ROSTER,
   SCHEDULE,
@@ -21,6 +22,8 @@ export default function LineupOptimizer() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return <PageSkeleton />;
+
+  const { isPremium } = useTrial();
 
   const weekData   = SCHEDULE[selectedWeek] || SCHEDULE[CURRENT_WEEK];
   const weekRecs   = WEEKLY_RECS[selectedWeek] || WEEKLY_RECS[CURRENT_WEEK];
@@ -174,16 +177,16 @@ export default function LineupOptimizer() {
         <div style={styles.content}>
 
           {byeRecs.length > 0 && (
-            <RecSection title="⛔ Bye Week — Must Sit" color="#7f1d1d" recs={byeRecs} onMoreInfo={setMoreInfoPlayer} />
+            <RecSection title="⛔ Bye Week — Must Sit" color="#7f1d1d" recs={byeRecs} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
           )}
           {starts.length > 0 && (
-            <RecSection title="✅ Start" color="#22c55e" recs={starts} onMoreInfo={setMoreInfoPlayer} />
+            <RecSection title="✅ Start" color="#22c55e" recs={starts} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
           )}
           {monitors.length > 0 && (
-            <RecSection title="👀 Monitor" color="#f59e0b" recs={monitors} onMoreInfo={setMoreInfoPlayer} />
+            <RecSection title="👀 Monitor" color="#f59e0b" recs={monitors} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
           )}
           {sits.length > 0 && (
-            <RecSection title="🪑 Sit" color="#ef4444" recs={sits} onMoreInfo={setMoreInfoPlayer} />
+            <RecSection title="🪑 Sit" color="#ef4444" recs={sits} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
           )}
         </div>
       )}
@@ -419,7 +422,8 @@ export default function LineupOptimizer() {
 
 // ─── Rec Section ──────────────────────────────────────────────────────────────
 
-function RecSection({ title, color, recs, onMoreInfo }) {
+function RecSection({ title, color, recs, onMoreInfo, isPremium }) {
+  const router = useRouter();
   return (
     <div style={styles.recSection}>
       <div style={{ ...styles.recSectionTitle, color }}>{title}</div>
@@ -435,9 +439,9 @@ function RecSection({ title, color, recs, onMoreInfo }) {
               </div>
               <div style={styles.recCardReason}>{rec.reason}</div>
               {!rec.byeFlag && (
-                <button style={styles.moreInfoBtn} onClick={() => onMoreInfo(rec.player)}>
-                  More Info ›
-                </button>
+                isPremium
+                  ? <button style={styles.moreInfoBtn} onClick={() => onMoreInfo(rec.player)}>More Info ›</button>
+                  : <button style={styles.moreInfoLocked} onClick={() => router.push('/pricing')}>🔒 More Info</button>
               )}
             </div>
           </div>
@@ -577,6 +581,11 @@ const styles = {
   gradeTag: { fontSize: 14, fontWeight: 800 },
   moreInfoBtn: {
     background: 'transparent', border: '1px solid #2a2a2a', color: '#52525b',
+    borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 600,
+    cursor: 'pointer', marginTop: 6,
+  },
+  moreInfoLocked: {
+    background: 'transparent', border: '1px solid #3f1a00', color: '#7c2d12',
     borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 600,
     cursor: 'pointer', marginTop: 6,
   },

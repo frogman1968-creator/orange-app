@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { DRAFT_POOL, ROSTER_REQUIREMENTS } from '../lib/sampleData';
+import { useTrial } from '../lib/useTrial';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 const POS_DEMAND = { QB: 0.08, RB: 0.30, WR: 0.32, TE: 0.10, K: 0.05, DEF: 0.05 };
@@ -124,6 +125,8 @@ export default function DraftCompanion() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return <PageSkeleton />;
+
+  const { isPremium } = useTrial();
 
   const myPickSlots = useMemo(
     () => getSnakePickSlots(draftPosition, numTeams, totalRounds),
@@ -305,8 +308,13 @@ export default function DraftCompanion() {
         </div>
       )}
 
-      {/* Orange Suggests */}
-      {suggestion && isMyTurn && (
+      {/* Orange Suggests — premium only */}
+      {!isPremium && isMyTurn && (
+        <div style={styles.lockedBanner} onClick={() => router.push('/pricing')}>
+          🔒 <strong>Orange Suggests</strong> — unlock expert pattern picks · <span style={{ textDecoration: 'underline' }}>Upgrade</span>
+        </div>
+      )}
+      {isPremium && suggestion && isMyTurn && (
         <div style={styles.suggestBanner}>
           <div style={styles.suggestHeader}>
             🟠 You went {suggestion.heavyPos}-{suggestion.heavyPos} — top {suggestion.suggestPos} available:
@@ -381,7 +389,10 @@ export default function DraftCompanion() {
                       {p.team} · ADP {p.adp.toFixed(1)} · Proj {p.projectedPts.toFixed(1)} · Bye {p.bye}
                     </div>
                     <div style={styles.survivalRow}>
-                      <span style={{ ...styles.survivalText, color: sv.color }}>🎯 {sv.text}</span>
+                      {isPremium
+                        ? <span style={{ ...styles.survivalText, color: sv.color }}>🎯 {sv.text}</span>
+                        : <span style={{ ...styles.survivalText, color: '#52525b', cursor: 'pointer' }} onClick={() => router.push('/pricing')}>🔒 Survival odds — upgrade</span>
+                      }
                     </div>
                     <div style={styles.badgeRow}>
                       {p.isNeed && <span style={styles.needBadge}>NEED</span>}
@@ -554,6 +565,11 @@ const styles = {
   needBanner: {
     background: '#1a1200', borderBottom: '1px solid #f97316',
     color: '#fbbf24', fontSize: 13, fontWeight: 600, padding: '8px 16px',
+  },
+  lockedBanner: {
+    background: '#1a0a00', borderBottom: '1px solid #7c2d12',
+    padding: '10px 16px', fontSize: 12, color: '#9a3412',
+    fontWeight: 600, cursor: 'pointer',
   },
   suggestBanner: {
     background: '#0d1a2e', borderBottom: '1px solid #0284c7', padding: '10px 16px',
