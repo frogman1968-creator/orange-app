@@ -125,6 +125,12 @@ export default function Account() {
             <span style={styles.infoValue}>Yahoo API (pending)</span>
           </div>
         </div>
+        <button
+          style={{ ...styles.manageBtn, marginTop: 12 }}
+          onClick={() => router.push('/connect')}
+        >
+          Y! Manage Yahoo Connection
+        </button>
       </div>
 
       {/* Sign Out */}
