@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -19,6 +20,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid plan' });
   }
 
+  // Get the logged-in user from the auth token (if present)
+  let userEmail = null;
+  let userId = null;
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (token) {
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        userEmail = user.email;
+        userId = user.id;
+      }
+    } catch (e) {
+      // Non-fatal — proceed without user context
+    }
+  }
+
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orange-app-sigma.vercel.app';
 
@@ -28,7 +52,13 @@ export default async function handler(req, res) {
       success_url: `${appUrl}/dashboard?subscribed=true`,
       cancel_url:  `${appUrl}/pricing`,
       allow_promotion_codes: true,
-      metadata: { plan },
+      // Pre-fill email if user is logged in
+      ...(userEmail && { customer_email: userEmail }),
+      metadata: {
+        plan,
+        // Pass user ID so the webhook can link subscription to Supabase user
+        ...(userId && { supabase_user_id: userId }),
+      },
     });
 
     res.json({ url: session.url });

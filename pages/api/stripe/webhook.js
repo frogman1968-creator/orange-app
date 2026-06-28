@@ -36,16 +36,10 @@ export default async function handler(req, res) {
   switch (event.type) {
     case 'checkout.session.completed': {
       const customerId = session.customer;
-      const plan = session.metadata?.plan;
-      const email = session.customer_details?.email;
-
-      // Look up the Supabase user by email to link subscription to user_id
-      let userId = null;
-      if (email) {
-        const { data: users } = await supabase.auth.admin.listUsers();
-        const match = users?.users?.find(u => u.email === email);
-        if (match) userId = match.id;
-      }
+      const plan      = session.metadata?.plan;
+      const email     = session.customer_details?.email;
+      // supabase_user_id is passed from checkout.js metadata when user is logged in
+      const userId    = session.metadata?.supabase_user_id || null;
 
       await supabase.from('subscriptions').upsert({
         stripe_customer_id: customerId,

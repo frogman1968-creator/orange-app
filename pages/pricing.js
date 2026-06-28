@@ -1,5 +1,6 @@
 import { useRouter } from 'next/router';
 import { useState } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 export default function Pricing() {
   const router = useRouter();
@@ -9,9 +10,16 @@ export default function Pricing() {
   async function handleCheckout(plan) {
     setLoading(plan);
     try {
+      // Pass auth token so checkout can link subscription to Supabase user
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ plan }),
       });
       const { url, error } = await res.json();
