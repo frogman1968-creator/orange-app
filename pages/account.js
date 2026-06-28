@@ -1,20 +1,22 @@
 import { useRouter } from 'next/router';
 import { useTrial } from '../lib/useTrial';
+import { useAuth } from '../lib/useAuth';
 import { withAuth } from '../lib/withAuth';
 
 function Account() {
   const router = useRouter();
   const { status, daysLeft, isPremium, isExpired } = useTrial();
+  const { user, signOut } = useAuth();
 
   function handleManage() {
-    // When Yahoo auth is live, this will open Stripe customer portal
     router.push('/pricing');
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
     localStorage.removeItem('orange_trial_start');
     localStorage.removeItem('orange_subscribed');
-    router.push('/');
+    await signOut();
+    router.push('/login');
   }
 
   const statusConfig = {
@@ -40,7 +42,7 @@ function Account() {
       <div style={styles.profileCard}>
         <div style={styles.avatar}>🟠</div>
         <div style={styles.profileInfo}>
-          <div style={styles.profileName}>Frogman68</div>
+          <div style={styles.profileName}>{user?.email || '—'}</div>
           <div style={styles.profileLeague}>Footagio League</div>
         </div>
       </div>
@@ -153,11 +155,8 @@ function Account() {
       {/* Sign Out */}
       <div style={styles.section}>
         <button style={styles.signOutBtn} onClick={handleSignOut}>
-          Reset Trial / Sign Out
+          Sign Out
         </button>
-        <div style={styles.signOutNote}>
-          Clears local trial data. Use this to test the paywall flow.
-        </div>
       </div>
 
       {/* Bottom Nav */}
