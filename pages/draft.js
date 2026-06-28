@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { DRAFT_POOL, ROSTER_REQUIREMENTS } from '../lib/sampleData';
 import { useTrial } from '../lib/useTrial';
+import { withAuth } from '../lib/withAuth';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 const POS_DEMAND = { QB: 0.08, RB: 0.30, WR: 0.32, TE: 0.10, K: 0.05, DEF: 0.05 };
@@ -103,7 +104,7 @@ function getPatternSuggestion(roster, available, counts) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function DraftCompanion() {
+function DraftCompanion() {
   const router = useRouter();
 
   // Setup
@@ -701,3 +702,5 @@ const styles = {
     borderRadius: 12, padding: '14px 0', fontSize: 16, fontWeight: 700, cursor: 'pointer',
   },
 };
+
+export default withAuth(DraftCompanion);

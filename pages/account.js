@@ -1,7 +1,8 @@
 import { useRouter } from 'next/router';
 import { useTrial } from '../lib/useTrial';
+import { withAuth } from '../lib/withAuth';
 
-export default function Account() {
+function Account() {
   const router = useRouter();
   const { status, daysLeft, isPremium, isExpired } = useTrial();
 
@@ -139,6 +140,16 @@ export default function Account() {
         </button>
       </div>
 
+      {/* Legal */}
+      <div style={styles.section}>
+        <button style={{ ...styles.manageBtn, marginTop: 0 }} onClick={() => router.push('/legal?tab=privacy')}>
+          Privacy Policy
+        </button>
+        <button style={{ ...styles.manageBtn, marginTop: 8 }} onClick={() => router.push('/legal?tab=terms')}>
+          Terms of Service
+        </button>
+      </div>
+
       {/* Sign Out */}
       <div style={styles.section}>
         <button style={styles.signOutBtn} onClick={handleSignOut}>
@@ -234,3 +245,5 @@ const styles = {
   },
   navBtnActive: { color: '#f97316' },
 };
+
+export default withAuth(Account);

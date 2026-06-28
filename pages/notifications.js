@@ -1,5 +1,6 @@
 import { useRouter } from 'next/router';
 import { usePushNotifications } from '../lib/usePushNotifications';
+import { withAuth } from '../lib/withAuth';
 
 const ALERT_TYPES = [
   { id: 'bye',     icon: '⛔', label: 'Bye week alerts',        sub: 'Notified Tuesday before a bye week' },
@@ -10,7 +11,7 @@ const ALERT_TYPES = [
   { id: 'trade',   icon: '⚖️', label: 'Trade offers',           sub: 'When a trade is proposed in your league' },
 ];
 
-export default function Notifications() {
+function Notifications() {
   const router = useRouter();
   const { supported, permission, subscribed, loading, subscribe, unsubscribe } = usePushNotifications();
 
@@ -172,3 +173,5 @@ const styles = {
     cursor: 'pointer', marginTop: 8,
   },
 };
+
+export default withAuth(Notifications);

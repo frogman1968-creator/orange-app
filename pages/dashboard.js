@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import { withAuth } from '../lib/withAuth';
 import {
   LEAGUE,
   TEAMS,
@@ -11,7 +12,7 @@ import {
 import { useTrial } from '../lib/useTrial';
 import PaywallModal from '../components/PaywallModal';
 
-export default function Dashboard() {
+function Dashboard() {
   const router = useRouter();
   const [view, setView] = useState('roster'); // 'roster' | 'matchup' | 'lineup' | 'standings'
 
@@ -621,3 +622,5 @@ const styles = {
   },
   navBtnActive: { color: '#f97316' },
 };
+
+export default withAuth(Dashboard);

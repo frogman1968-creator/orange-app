@@ -39,9 +39,18 @@ export default async function handler(req, res) {
       const plan = session.metadata?.plan;
       const email = session.customer_details?.email;
 
+      // Look up the Supabase user by email to link subscription to user_id
+      let userId = null;
+      if (email) {
+        const { data: users } = await supabase.auth.admin.listUsers();
+        const match = users?.users?.find(u => u.email === email);
+        if (match) userId = match.id;
+      }
+
       await supabase.from('subscriptions').upsert({
         stripe_customer_id: customerId,
         email,
+        user_id: userId,
         plan,
         status: 'active',
         created_at: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import { withAuth } from '../lib/withAuth';
 
 /**
  * Player News Feed
@@ -126,7 +127,7 @@ function getPosBadge(pos) {
   };
 }
 
-export default function NewsPage() {
+function NewsPage() {
   const router = useRouter();
   const [filter, setFilter] = useState('All');
   const [expanded, setExpanded] = useState(null);
@@ -285,3 +286,5 @@ const styles = {
     fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '4px 8px',
   },
 };
+
+export default withAuth(NewsPage);

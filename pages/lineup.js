@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTrial } from '../lib/useTrial';
+import { withAuth } from '../lib/withAuth';
 import {
   MY_ROSTER,
   SCHEDULE,
@@ -12,7 +13,7 @@ import {
 const CURRENT_WEEK = 14;
 const GRADE_COLOR = { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#ef4444', F: '#7f1d1d' };
 
-export default function LineupOptimizer() {
+function LineupOptimizer() {
   const router = useRouter();
   const [selectedWeek, setSelectedWeek] = useState(CURRENT_WEEK);
   const [view, setView] = useState('startsit');
@@ -689,3 +690,5 @@ const styles = {
   },
   navBtnActive: { color: '#f97316' },
 };
+
+export default withAuth(LineupOptimizer);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { MY_ROSTER } from '../lib/sampleData';
 import { useTrial } from '../lib/useTrial';
+import { withAuth } from '../lib/withAuth';
 
 // Extended player pool for trade targets (combines roster + common trade targets)
 const PLAYER_POOL = [
@@ -72,7 +73,7 @@ function getPosBadge(pos) {
   };
 }
 
-export default function TradeAnalyzer() {
+function TradeAnalyzer() {
   const router = useRouter();
   const { isPremium } = useTrial();
 
@@ -415,3 +416,5 @@ const styles = {
     fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '4px 12px',
   },
 };
+
+export default withAuth(TradeAnalyzer);
