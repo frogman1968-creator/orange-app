@@ -1,31 +1,27 @@
 /**
  * /api/auth/yahoo/callback
  * Handles Yahoo OAuth 2.0 callback.
- * Exchanges the authorization code for access + refresh tokens.
- * Stores tokens in Supabase, then redirects to /connect?connected=true
- *
- * Required env vars:
- *   NEXT_PUBLIC_YAHOO_CLIENT_ID
- *   YAHOO_CLIENT_SECRET
- *   NEXT_PUBLIC_APP_URL
- *   NEXT_PUBLIC_SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY
+ * Exchanges code for tokens, links to Supabase user via state param.
  */
 
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orange-app-sigma.vercel.app';
 
-  // User denied access or error from Yahoo
   if (error || !code) {
-    return res.redirect(`/connect?error=cancelled`);
+    return res.redirect(`${appUrl}/connect?error=cancelled`);
   }
 
   const clientId     = process.env.NEXT_PUBLIC_YAHOO_CLIENT_ID;
   const clientSecret = process.env.YAHOO_CLIENT_SECRET;
   const redirectUri  = `${appUrl}/api/auth/yahoo/callback`;
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   try {
     // Exchange authorization code for tokens
@@ -51,26 +47,43 @@ export default async function handler(req, res) {
     }
 
     const tokens = await tokenRes.json();
-    // tokens: { access_token, refresh_token, expires_in, token_type, xoauth_yahoo_guid }
+    const yahooGuid = tokens.xoauth_yahoo_guid;
+    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    const yahooGuid  = tokens.xoauth_yahoo_guid;
-    const expiresAt  = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+    // Try to get Supabase user_id from the state param (Supabase JWT)
+    let userId = null;
+    if (state) {
+      try {
+        const anonClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          { global: { headers: { Authorization: `Bearer ${state}` } } }
+        );
+        const { data: { user } } = await anonClient.auth.getUser();
+        if (user) userId = user.id;
+      } catch (e) {
+        console.warn('Could not resolve Supabase user from state:', e.message);
+      }
+    }
 
-    // Store tokens in Supabase
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
+    // Store tokens in Supabase, linked to user_id if available
     await supabase.from('yahoo_tokens').upsert({
       yahoo_guid:    yahooGuid,
       access_token:  tokens.access_token,
       refresh_token: tokens.refresh_token,
       expires_at:    expiresAt,
+      user_id:       userId,
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'yahoo_guid' });
 
-    // Redirect back to connect page with success
+    // If we have a user_id, also update by user_id in case guid changed
+    if (userId) {
+      // Store yahoo_guid in a way we can look up by user_id later
+      await supabase.from('yahoo_tokens')
+        .update({ user_id: userId })
+        .eq('yahoo_guid', yahooGuid);
+    }
+
     return res.redirect(`${appUrl}/connect?connected=true`);
 
   } catch (err) {

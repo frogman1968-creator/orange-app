@@ -14,8 +14,7 @@
 
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-
-const YAHOO_PENDING = !process.env.NEXT_PUBLIC_YAHOO_CLIENT_ID;
+import { supabase } from '../lib/supabaseClient';
 
 export default function Connect() {
   const router = useRouter();
@@ -23,22 +22,15 @@ export default function Connect() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Check if we're returning from Yahoo OAuth callback
-    const { code, error: oauthError, league_id } = router.query;
-    if (oauthError) setError('Yahoo authorization was cancelled or failed. Try again.');
-    if (code) {
-      // Token exchange handled server-side in /api/auth/yahoo/callback
-      // If we reach here with a code, something went wrong
-      setError('Authorization incomplete. Please try again.');
-    }
-    if (router.query.connected === 'true') {
-      setConnected(true);
-    }
+    if (router.query.error) setError('Yahoo authorization was cancelled or failed. Try again.');
+    if (router.query.connected === 'true') setConnected(true);
   }, [router.query]);
 
-  function startYahooAuth() {
-    if (YAHOO_PENDING) return;
-    window.location.href = '/api/auth/yahoo';
+  async function startYahooAuth() {
+    // Pass the Supabase access token via state so the callback links accounts
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    window.location.href = `/api/auth/yahoo?token=${encodeURIComponent(token)}`;
   }
 
   return (
@@ -84,25 +76,10 @@ export default function Connect() {
               Orange pulls your real roster, matchups, waiver wire, and standings directly from Yahoo — no manual entry.
             </div>
 
-            {/* Pending state */}
-            {YAHOO_PENDING && (
-              <div style={styles.pendingCard}>
-                <div style={styles.pendingIcon}>🕐</div>
-                <div style={styles.pendingTitle}>Approval in progress</div>
-                <div style={styles.pendingBody}>
-                  Yahoo is reviewing the Orange app for API access. This typically takes 1–2 weeks. You'll be notified as soon as it's approved — in the meantime, Orange is running on your Footagio League preview data.
-                </div>
-                <div style={styles.pendingMeta}>League ID: 788615 · Footagio League</div>
-              </div>
-            )}
-
-            {/* Live OAuth button — shows when approved */}
-            {!YAHOO_PENDING && (
-              <button style={styles.yahooBtn} onClick={startYahooAuth}>
-                <span style={styles.yahooBtnY}>Y!</span>
-                Connect with Yahoo Fantasy
-              </button>
-            )}
+            <button style={styles.yahooBtn} onClick={startYahooAuth}>
+              <span style={styles.yahooBtnY}>Y!</span>
+              Connect with Yahoo Fantasy
+            </button>
 
             {/* What gets connected */}
             <div style={styles.featuresSection}>
