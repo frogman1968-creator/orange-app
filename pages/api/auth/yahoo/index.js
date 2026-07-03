@@ -32,5 +32,7 @@ export default function handler(req, res) {
   });
 
   const authUrl = `https://api.login.yahoo.com/oauth2/request_auth?${params.toString()}`;
+  console.log('Yahoo OAuth redirect_uri:', redirectUri);
+  console.log('Yahoo OAuth full URL:', authUrl);
   res.redirect(authUrl);
 }
