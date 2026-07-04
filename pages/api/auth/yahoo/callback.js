@@ -67,7 +67,9 @@ export default async function handler(req, res) {
     }
 
     // Store tokens in Supabase, linked to user_id if available
-    console.log('Storing tokens — yahoo_guid:', yahooGuid, 'user_id:', userId);
+    console.log('Token keys:', Object.keys(tokens));
+    console.log('yahoo_guid:', yahooGuid, 'user_id:', userId);
+
     const { error: upsertError } = await supabase.from('yahoo_tokens').upsert({
       yahoo_guid:    yahooGuid,
       access_token:  tokens.access_token,
@@ -79,10 +81,10 @@ export default async function handler(req, res) {
 
     if (upsertError) {
       console.error('Supabase upsert error:', JSON.stringify(upsertError));
-    } else {
-      console.log('Tokens stored successfully');
+      return res.redirect(`${appUrl}/connect?error=${encodeURIComponent(upsertError.message)}`);
     }
 
+    console.log('Tokens stored successfully');
     return res.redirect(`${appUrl}/connect?connected=true`);
 
   } catch (err) {
