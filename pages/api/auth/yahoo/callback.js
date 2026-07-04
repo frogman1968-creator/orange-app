@@ -67,7 +67,8 @@ export default async function handler(req, res) {
     }
 
     // Store tokens in Supabase, linked to user_id if available
-    await supabase.from('yahoo_tokens').upsert({
+    console.log('Storing tokens — yahoo_guid:', yahooGuid, 'user_id:', userId);
+    const { error: upsertError } = await supabase.from('yahoo_tokens').upsert({
       yahoo_guid:    yahooGuid,
       access_token:  tokens.access_token,
       refresh_token: tokens.refresh_token,
@@ -76,12 +77,10 @@ export default async function handler(req, res) {
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'yahoo_guid' });
 
-    // If we have a user_id, also update by user_id in case guid changed
-    if (userId) {
-      // Store yahoo_guid in a way we can look up by user_id later
-      await supabase.from('yahoo_tokens')
-        .update({ user_id: userId })
-        .eq('yahoo_guid', yahooGuid);
+    if (upsertError) {
+      console.error('Supabase upsert error:', JSON.stringify(upsertError));
+    } else {
+      console.log('Tokens stored successfully');
     }
 
     return res.redirect(`${appUrl}/connect?connected=true`);
