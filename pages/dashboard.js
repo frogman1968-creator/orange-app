@@ -134,7 +134,11 @@ function Dashboard() {
             </div>
           </div>
           <div style={styles.myTeamRight}>
-            <div style={styles.myTeamRank}>#{myTeam.rank} in League</div>
+            {myTeam.rank ? (
+              <div style={styles.myTeamRank}>#{myTeam.rank} in League</div>
+            ) : (
+              <div style={styles.myTeamRank}>Pre-Season</div>
+            )}
           </div>
         </div>
       )}
@@ -178,7 +182,16 @@ function Dashboard() {
 
 function RosterView({ starters = [], bench = [] }) {
   if (starters.length === 0 && bench.length === 0) {
-    return <div style={{ ...styles.section, color: '#52525b', paddingTop: 20 }}>No roster data available.</div>;
+    return (
+      <div style={{ ...styles.section, paddingTop: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
+        <div style={{ color: '#f97316', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Draft Day is Coming</div>
+        <div style={{ color: '#52525b', fontSize: 13, lineHeight: 1.5 }}>
+          Your roster will appear here once your league drafts.<br />
+          Check back in August when the season kicks off.
+        </div>
+      </div>
+    );
   }
   return (
     <div style={styles.section}>
@@ -194,7 +207,16 @@ function RosterView({ starters = [], bench = [] }) {
 
 function MatchupView({ matchup }) {
   if (!matchup) {
-    return <div style={{ ...styles.section, color: '#52525b', paddingTop: 20 }}>No matchup data available.</div>;
+    return (
+      <div style={{ ...styles.section, paddingTop: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>⚔️</div>
+        <div style={{ color: '#f97316', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>No Matchups Yet</div>
+        <div style={{ color: '#52525b', fontSize: 13, lineHeight: 1.5 }}>
+          Matchups will appear here once the season starts.<br />
+          NFL 2026 kicks off in September.
+        </div>
+      </div>
+    );
   }
   const myPts   = matchup.myTeam?.points || 0;
   const oppPts  = matchup.opponent?.points || 0;
