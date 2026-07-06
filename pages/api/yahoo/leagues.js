@@ -28,16 +28,16 @@ export default async function handler(req, res) {
   const { data: { user } } = await anonClient.auth.getUser();
   if (!user) return res.status(401).json({ error: 'Invalid session' });
 
-  // Get Yahoo token for this user
+  // Check Yahoo account is connected
   const { data: tokenRow } = await supabase
     .from('yahoo_tokens')
-    .select('yahoo_guid')
+    .select('user_id')
     .eq('user_id', user.id)
     .single();
 
   if (!tokenRow) return res.status(404).json({ error: 'Yahoo account not connected', reconnect: true });
 
-  const { access_token, error } = await getYahooToken(tokenRow.yahoo_guid, supabase);
+  const { access_token, error } = await getYahooToken(user.id, supabase);
   if (error) return res.status(401).json({ error, reconnect: true });
 
   try {
