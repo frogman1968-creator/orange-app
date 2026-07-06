@@ -89,13 +89,13 @@ export default async function handler(req, res) {
     console.log('yahoo_guid:', yahooGuid, 'user_id:', userId);
 
     const { error: upsertError } = await supabase.from('yahoo_tokens').upsert({
-      yahoo_guid:    yahooGuid,
+      yahoo_guid:    yahooGuid || null,
       access_token:  tokens.access_token,
       refresh_token: tokens.refresh_token,
       expires_at:    expiresAt,
       user_id:       userId,
       updated_at:    new Date().toISOString(),
-    }, { onConflict: 'yahoo_guid' });
+    }, { onConflict: 'user_id' });
 
     if (upsertError) {
       console.error('Supabase upsert error:', JSON.stringify(upsertError));
