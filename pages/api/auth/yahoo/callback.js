@@ -47,7 +47,25 @@ export default async function handler(req, res) {
     }
 
     const tokens = await tokenRes.json();
-    const yahooGuid = tokens.xoauth_yahoo_guid;
+    console.log('Token keys:', Object.keys(tokens));
+
+    // Yahoo sometimes omits xoauth_yahoo_guid — fetch from userinfo if missing
+    let yahooGuid = tokens.xoauth_yahoo_guid;
+    if (!yahooGuid) {
+      try {
+        const userInfoRes = await fetch('https://api.login.yahoo.com/openid/v1/userinfo', {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        if (userInfoRes.ok) {
+          const userInfo = await userInfoRes.json();
+          yahooGuid = userInfo.sub;
+          console.log('Got yahoo_guid from userinfo:', yahooGuid);
+        }
+      } catch (e) {
+        console.warn('Could not fetch Yahoo userinfo:', e.message);
+      }
+    }
+
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
     // Try to get Supabase user_id from the state param (Supabase JWT)
