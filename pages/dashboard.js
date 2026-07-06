@@ -1,26 +1,71 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { withAuth } from '../lib/withAuth';
-import {
-  LEAGUE,
-  TEAMS,
-  MY_ROSTER,
-  CURRENT_MATCHUP,
-  WEEKLY_RECOMMENDATIONS,
-  WAIVER_RECOMMENDATIONS,
-} from '../lib/sampleData';
+import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
 import PaywallModal from '../components/PaywallModal';
 
 function Dashboard() {
   const router = useRouter();
-  const [view, setView] = useState('roster'); // 'roster' | 'matchup' | 'lineup' | 'standings'
-
-  const myTeam = TEAMS.find(t => t.isMe);
+  const [view, setView] = useState('roster');
   const { status, daysLeft, isExpired } = useTrial();
   const [paywallDismissed, setPaywallDismissed] = useState(false);
 
-  if (status === 'loading') return <DashboardSkeleton />;
+  // Live data state
+  const [liveData, setLiveData]     = useState(null);
+  const [myTeamInfo, setMyTeamInfo] = useState(null);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [needsConnect, setNeedsConnect] = useState(false);
+  const [dataError, setDataError]   = useState(null);
+
+  useEffect(() => {
+    async function loadLiveData() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const authHeader = { Authorization: `Bearer ${session.access_token}` };
+
+        // Step 1: get user's teams to find league_key + team_key
+        const teamsRes = await fetch('/api/yahoo/myteams', { headers: authHeader });
+        if (teamsRes.status === 404) { setNeedsConnect(true); setDataLoading(false); return; }
+        if (!teamsRes.ok) { setDataError('Could not load Yahoo data.'); setDataLoading(false); return; }
+
+        const { teams } = await teamsRes.json();
+        if (!teams || teams.length === 0) { setNeedsConnect(true); setDataLoading(false); return; }
+
+        // Use the first team (most users have one NFL league)
+        const { leagueKey, teamKey, name: teamName } = teams[0];
+        setMyTeamInfo({ leagueKey, teamKey, name: teamName });
+
+        // Step 2: fetch full dashboard data
+        const dashRes = await fetch(
+          `/api/yahoo/dashboard?league_key=${encodeURIComponent(leagueKey)}&team_key=${encodeURIComponent(teamKey)}`,
+          { headers: authHeader }
+        );
+        if (!dashRes.ok) { setDataError('Could not load league data.'); setDataLoading(false); return; }
+
+        const data = await dashRes.json();
+        setLiveData(data);
+      } catch (e) {
+        console.error('Dashboard data error:', e);
+        setDataError('Could not load data.');
+      } finally {
+        setDataLoading(false);
+      }
+    }
+    loadLiveData();
+  }, []);
+
+  if (status === 'loading' || dataLoading) return <DashboardSkeleton />;
+
+  // Find my team in standings
+  const myTeamKey = myTeamInfo?.teamKey;
+  const myTeam    = liveData?.teams?.find(t => t.teamKey === myTeamKey) || liveData?.teams?.[0];
+  const league    = liveData?.league;
+  const matchup   = liveData?.matchup;
+  const roster    = liveData?.roster || [];
+  const starters  = roster.filter(p => p.selectedPosition !== 'BN' && p.selectedPosition !== 'IR');
+  const bench     = roster.filter(p => p.selectedPosition === 'BN' || p.selectedPosition === 'IR');
 
   return (
     <div style={styles.page}>
@@ -34,19 +79,31 @@ function Dashboard() {
       {status === 'trial' && (
         <div style={styles.trialBanner}>
           🟠 {daysLeft} day{daysLeft !== 1 ? 's' : ''} left in your free trial —{' '}
-          <span
-            style={{ textDecoration: 'underline', cursor: 'pointer' }}
-            onClick={() => router.push('/pricing')}
-          >
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => router.push('/pricing')}>
             upgrade to keep access
           </span>
         </div>
       )}
 
-      {/* Live Data Banner */}
-      <div style={styles.banner}>
-        🕐 Yahoo API approval in progress — showing Footagio League preview data. Live data syncs automatically when approved.
-      </div>
+      {/* Connect / Error Banner */}
+      {needsConnect && (
+        <div style={{ ...styles.banner, borderColor: '#f97316', color: '#f97316' }}>
+          🔗 Connect your Yahoo account to see live data —{' '}
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => router.push('/connect')}>
+            Connect now
+          </span>
+        </div>
+      )}
+      {dataError && (
+        <div style={{ ...styles.banner, borderColor: '#ef4444', color: '#ef4444' }}>
+          ⚠️ {dataError}
+        </div>
+      )}
+      {liveData && (
+        <div style={{ ...styles.banner, borderColor: '#22c55e', color: '#22c55e', background: '#0a1f0a' }}>
+          ✅ Live Yahoo data — synced just now
+        </div>
+      )}
 
       {/* Header */}
       <div style={styles.header}>
@@ -55,34 +112,38 @@ function Dashboard() {
           <span style={styles.headerTitle}>Orange</span>
         </div>
         <div style={styles.headerRight}>
-          <div style={styles.userBadge}>Frogman68</div>
-          <div style={styles.weekBadge}>Week {CURRENT_MATCHUP.week}</div>
+          {matchup && <div style={styles.weekBadge}>Week {matchup.week}</div>}
         </div>
       </div>
 
       {/* League Header */}
-      <div style={styles.leagueHeader}>
-        <div style={styles.leagueName}>{LEAGUE.name}</div>
-        <div style={styles.leagueMeta}>{LEAGUE.numTeams} teams · {LEAGUE.scoringType} · Yahoo</div>
-      </div>
+      {league && (
+        <div style={styles.leagueHeader}>
+          <div style={styles.leagueName}>{league.name || 'My League'}</div>
+          <div style={styles.leagueMeta}>{league.num_teams} teams · {league.scoring_type?.toUpperCase()} · Yahoo</div>
+        </div>
+      )}
 
       {/* My Team Summary Card */}
-      <div style={styles.myTeamCard}>
-        <div style={styles.myTeamLeft}>
-          <div style={styles.myTeamName}>{myTeam.name}</div>
-          <div style={styles.myTeamRecord}>{myTeam.wins}-{myTeam.losses} · {myTeam.pf.toFixed(1)} pts for</div>
+      {myTeam && (
+        <div style={styles.myTeamCard}>
+          <div style={styles.myTeamLeft}>
+            <div style={styles.myTeamName}>{myTeam.name || myTeamInfo?.name}</div>
+            <div style={styles.myTeamRecord}>
+              {myTeam.wins}-{myTeam.losses}{myTeam.ties > 0 ? `-${myTeam.ties}` : ''} · {myTeam.pointsFor?.toFixed(1)} pts
+            </div>
+          </div>
+          <div style={styles.myTeamRight}>
+            <div style={styles.myTeamRank}>#{myTeam.rank} in League</div>
+          </div>
         </div>
-        <div style={styles.myTeamRight}>
-          <div style={styles.myTeamRank}>🏆 #1 in League</div>
-        </div>
-      </div>
+      )}
 
       {/* View Toggle */}
       <div style={styles.viewToggle}>
         {[
           { key: 'roster',    label: '📋 Roster' },
           { key: 'matchup',   label: '⚔️ Matchup' },
-          { key: 'lineup',    label: '💡 Lineup Tips' },
           { key: 'standings', label: '📊 Standings' },
         ].map(v => (
           <button
@@ -96,32 +157,9 @@ function Dashboard() {
       </div>
 
       {/* Views */}
-      {view === 'roster'    && <RosterView />}
-      {view === 'matchup'   && <MatchupView />}
-      {view === 'lineup'    && <LineupView />}
-      {view === 'standings' && <StandingsView />}
-
-      {/* Waiver Wire */}
-      {view === 'roster' && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>🔔 Waiver Wire Moves</div>
-          {WAIVER_RECOMMENDATIONS.map((w, i) => (
-            <div key={i} style={styles.waiverRow}>
-              <div style={styles.waiverPlayers}>
-                <span style={styles.waiverAdd}>+ {w.addPlayer.name}</span>
-                <span style={getPosBadge(w.addPlayer.position)}>{w.addPlayer.position}</span>
-                {w.dropPlayer && (
-                  <>
-                    <span style={styles.waiverDrop}>− {w.dropPlayer.name}</span>
-                    <span style={getPosBadge(w.dropPlayer.position)}>{w.dropPlayer.position}</span>
-                  </>
-                )}
-              </div>
-              <div style={styles.waiverReason}>{w.reason}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      {view === 'roster'    && <RosterView starters={starters} bench={bench} />}
+      {view === 'matchup'   && <MatchupView matchup={matchup} />}
+      {view === 'standings' && <StandingsView teams={liveData?.teams || []} myTeamKey={myTeamKey} />}
 
       {/* Bottom Nav */}
       <div style={styles.bottomNav}>
@@ -138,130 +176,87 @@ function Dashboard() {
 
 // ─── Roster View ──────────────────────────────────────────────────────────────
 
-function RosterView() {
+function RosterView({ starters = [], bench = [] }) {
+  if (starters.length === 0 && bench.length === 0) {
+    return <div style={{ ...styles.section, color: '#52525b', paddingTop: 20 }}>No roster data available.</div>;
+  }
   return (
     <div style={styles.section}>
       <div style={styles.sectionTitle}>Starters</div>
-      {MY_ROSTER.starters.map(p => <PlayerRow key={p.id} player={p} isStarter />)}
+      {starters.map((p, i) => <PlayerRow key={p.playerKey || i} player={p} isStarter />)}
       <div style={{ ...styles.sectionTitle, marginTop: 20 }}>Bench</div>
-      {MY_ROSTER.bench.map(p => <PlayerRow key={p.id} player={p} />)}
+      {bench.map((p, i) => <PlayerRow key={p.playerKey || i} player={p} />)}
     </div>
   );
 }
 
 // ─── Matchup View ─────────────────────────────────────────────────────────────
 
-function MatchupView() {
-  const m = CURRENT_MATCHUP;
-  const winning = m.myScore > m.opponent.score;
+function MatchupView({ matchup }) {
+  if (!matchup) {
+    return <div style={{ ...styles.section, color: '#52525b', paddingTop: 20 }}>No matchup data available.</div>;
+  }
+  const myPts   = matchup.myTeam?.points || 0;
+  const oppPts  = matchup.opponent?.points || 0;
+  const myProj  = matchup.myTeam?.projectedPoints || 0;
+  const oppProj = matchup.opponent?.projectedPoints || 0;
+  const winning = myPts >= oppPts;
+  const edge    = myProj - oppProj;
 
   return (
     <div style={styles.section}>
       <div style={styles.matchupHeader}>
         <div style={styles.matchupSide}>
           <div style={{ ...styles.matchupScore, color: winning ? '#22c55e' : '#f97316' }}>
-            {m.myScore.toFixed(2)}
+            {myPts.toFixed(2)}
           </div>
-          <div style={styles.matchupTeamName}>Frogman's Squad</div>
-          <div style={styles.matchupProjected}>Proj: {m.myProjected.toFixed(1)}</div>
+          <div style={styles.matchupTeamName}>{matchup.myTeam?.name || 'My Team'}</div>
+          <div style={styles.matchupProjected}>Proj: {myProj.toFixed(1)}</div>
         </div>
         <div style={styles.matchupVs}>VS</div>
         <div style={styles.matchupSide}>
-          <div style={{ ...styles.matchupScore, color: winning ? '#f97316' : '#ef4444' }}>
-            {m.opponent.score.toFixed(2)}
+          <div style={{ ...styles.matchupScore, color: winning ? '#f97316' : '#22c55e' }}>
+            {oppPts.toFixed(2)}
           </div>
-          <div style={styles.matchupTeamName}>{m.opponent.name}</div>
-          <div style={styles.matchupProjected}>Proj: {m.opponent.projected.toFixed(1)}</div>
+          <div style={styles.matchupTeamName}>{matchup.opponent?.name || 'Opponent'}</div>
+          <div style={styles.matchupProjected}>Proj: {oppProj.toFixed(1)}</div>
         </div>
       </div>
-
-      <div style={styles.edgeBar}>
-        <span style={styles.edgeLabel}>Your edge:</span>
-        <span style={styles.edgeValue}>+{(m.myProjected - m.opponent.projected).toFixed(1)} projected pts</span>
-      </div>
-
-      <div style={styles.sectionTitle}>Opponent Weaknesses</div>
-      <div style={styles.weaknessGrid}>
-        {Object.entries(m.opponentWeaknesses).map(([pos, grade]) => (
-          <div key={pos} style={styles.weaknessCard}>
-            <span style={getPosBadge(pos)}>{pos}</span>
-            <span style={{ ...styles.gradeTag, color: gradeColor(grade) }}>{grade}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={styles.sectionTitle}>Opponent Starters</div>
-      {m.opponent.starters.map(p => (
-        <div key={p.id} style={styles.playerRow}>
-          <span style={getPosBadge(p.position)}>{p.position}</span>
-          <div style={styles.playerInfo}>
-            <div style={styles.playerName}>{p.name}</div>
-            <div style={styles.playerTeam}>{p.team}</div>
-          </div>
-          <div style={styles.playerPoints}>{p.projectedPts.toFixed(1)}</div>
+      {edge !== 0 && (
+        <div style={styles.edgeBar}>
+          <span style={styles.edgeLabel}>{edge > 0 ? 'Your edge:' : 'Opponent edge:'}</span>
+          <span style={{ ...styles.edgeValue, color: edge > 0 ? '#22c55e' : '#ef4444' }}>
+            {edge > 0 ? '+' : ''}{edge.toFixed(1)} projected pts
+          </span>
         </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Lineup Tips View ────────────────────────────────────────────────────────
-
-function LineupView() {
-  return (
-    <div style={styles.section}>
-      <div style={styles.sectionTitle}>Start / Sit Recommendations</div>
-      {WEEKLY_RECOMMENDATIONS.map((rec, i) => (
-        <div key={i} style={styles.recRow}>
-          <div style={styles.recLeft}>
-            <span style={getPosBadge(rec.player.position)}>{rec.player.position}</span>
-            <div style={styles.recInfo}>
-              <div style={styles.recName}>
-                {rec.player.name}
-                {rec.injuryFlag && <span style={styles.injuryTag}> ⚠️</span>}
-              </div>
-              <div style={styles.recTeam}>{rec.player.team}</div>
-            </div>
-          </div>
-          <div style={styles.recRight}>
-            <span style={{ ...styles.recBadge, background: recColor(rec.recommendation) }}>
-              {rec.recommendation.toUpperCase()}
-            </span>
-            <span style={{ ...styles.gradeTag, color: gradeColor(rec.matchupGrade), marginLeft: 6 }}>
-              {rec.matchupGrade}
-            </span>
-          </div>
-          <div style={styles.recReason}>{rec.reason}</div>
-        </div>
-      ))}
+      )}
     </div>
   );
 }
 
 // ─── Standings View ───────────────────────────────────────────────────────────
 
-function StandingsView() {
-  const sorted = [...TEAMS].sort((a, b) => b.wins - a.wins || b.pf - a.pf);
+function StandingsView({ teams = [], myTeamKey }) {
+  const sorted = [...teams].sort((a, b) => (b.wins - a.wins) || (b.pointsFor - a.pointsFor));
+  if (sorted.length === 0) {
+    return <div style={{ ...styles.section, color: '#52525b', paddingTop: 20 }}>No standings data available.</div>;
+  }
   return (
     <div style={styles.section}>
       <div style={styles.sectionTitle}>League Standings</div>
-      {sorted.map((t, i) => (
-        <div
-          key={t.id}
-          style={{
-            ...styles.standingRow,
-            ...(t.isMe ? styles.standingRowMine : {}),
-          }}
-        >
-          <span style={styles.standingRank}>{i + 1}</span>
-          <div style={styles.standingInfo}>
-            <div style={styles.standingName}>{t.name} {t.isMe && '⭐'}</div>
-            <div style={styles.standingOwner}>{t.owner}</div>
+      {sorted.map((t, i) => {
+        const isMe = t.teamKey === myTeamKey;
+        return (
+          <div key={t.teamKey || i} style={{ ...styles.standingRow, ...(isMe ? styles.standingRowMine : {}) }}>
+            <span style={styles.standingRank}>{i + 1}</span>
+            <div style={styles.standingInfo}>
+              <div style={styles.standingName}>{t.name} {isMe && '⭐'}</div>
+            </div>
+            <span style={styles.standingRecord}>{t.wins}-{t.losses}{t.ties > 0 ? `-${t.ties}` : ''}</span>
+            <span style={styles.standingPts}>{t.pointsFor?.toFixed(1)}</span>
           </div>
-          <span style={styles.standingRecord}>{t.wins}-{t.losses}</span>
-          <span style={styles.standingPts}>{t.pf.toFixed(1)}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -269,9 +264,10 @@ function StandingsView() {
 // ─── Player Row ───────────────────────────────────────────────────────────────
 
 function PlayerRow({ player, isStarter }) {
+  const pos = player.selectedPosition || player.position || '?';
   return (
     <div style={{ ...styles.playerRow, opacity: isStarter ? 1 : 0.72 }}>
-      <span style={getPosBadge(player.position)}>{player.position}</span>
+      <span style={getPosBadge(pos)}>{pos}</span>
       <div style={styles.playerInfo}>
         <div style={styles.playerName}>
           {player.name}
@@ -282,11 +278,10 @@ function PlayerRow({ player, isStarter }) {
             <span style={styles.injuryTag}> {player.status.toUpperCase()}</span>
           )}
         </div>
-        <div style={styles.playerTeam}>{player.team}</div>
+        <div style={styles.playerTeam}>{player.editorialTeam || player.team || ''}</div>
       </div>
       <div style={styles.playerRight}>
-        <div style={styles.playerPoints}>{player.projectedPts.toFixed(1)}</div>
-        <div style={styles.playerLastWeek}>last: {player.lastWeekPts.toFixed(1)}</div>
+        <div style={styles.playerPoints}>{player.position || pos}</div>
       </div>
     </div>
   );
