@@ -38,7 +38,7 @@ export default function Login() {
     setLoading(true);
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: 'https://orangeff.app/reset-password',
     });
 
     if (resetError) {
