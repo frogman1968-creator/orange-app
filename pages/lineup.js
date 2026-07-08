@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
+import { supabase } from '../lib/supabaseClient';
 import {
   MY_ROSTER,
   SCHEDULE,
@@ -20,8 +21,68 @@ function LineupOptimizer() {
   const [moreInfoPlayer, setMoreInfoPlayer] = useState(null);
   const [swapped, setSwapped] = useState({});
 
+  // Live AI state
+  const [aiAnalysis, setAiAnalysis]   = useState(null);
+  const [aiLoading, setAiLoading]     = useState(false);
+  const [aiError, setAiError]         = useState(null);
+  const [needsConnect, setNeedsConnect] = useState(false);
+
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Fetch live roster + AI analysis on mount
+  useEffect(() => {
+    async function fetchAI() {
+      try {
+        setAiLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const authHeader = { Authorization: `Bearer ${session.access_token}` };
+
+        // Get teams
+        const teamsRes = await fetch('/api/yahoo/myteams', { headers: authHeader });
+        if (teamsRes.status === 404) { setNeedsConnect(true); setAiLoading(false); return; }
+        if (!teamsRes.ok) { setAiError('Could not load Yahoo data.'); setAiLoading(false); return; }
+
+        const { teams } = await teamsRes.json();
+        if (!teams?.length) { setNeedsConnect(true); setAiLoading(false); return; }
+
+        const { leagueKey, teamKey } = teams[0];
+
+        // Get dashboard data (roster + matchup)
+        const dashRes = await fetch(
+          `/api/yahoo/dashboard?league_key=${encodeURIComponent(leagueKey)}&team_key=${encodeURIComponent(teamKey)}`,
+          { headers: authHeader }
+        );
+        if (!dashRes.ok) { setAiError('Could not load roster.'); setAiLoading(false); return; }
+
+        const { roster, matchup, league } = await dashRes.json();
+
+        if (!roster?.length) {
+          setAiAnalysis('__offseason__');
+          setAiLoading(false);
+          return;
+        }
+
+        // Call AI
+        const aiRes = await fetch('/api/ai/startsit', {
+          method: 'POST',
+          headers: { ...authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roster, matchup, scoringType: league?.scoring_type || 'head' }),
+        });
+        if (!aiRes.ok) { setAiError('AI analysis failed. Try again.'); setAiLoading(false); return; }
+
+        const { analysis } = await aiRes.json();
+        setAiAnalysis(analysis);
+      } catch (e) {
+        setAiError('Something went wrong.');
+      } finally {
+        setAiLoading(false);
+      }
+    }
+    if (mounted) fetchAI();
+  }, [mounted]);
+
   if (!mounted) return <PageSkeleton />;
 
   const { isPremium } = useTrial();
@@ -176,18 +237,62 @@ function LineupOptimizer() {
       {/* ── START / SIT ── */}
       {view === 'startsit' && (
         <div style={styles.content}>
+          {aiLoading && (
+            <div style={styles.aiLoadingCard}>
+              <div style={styles.aiLoadingIcon}>🟠</div>
+              <div style={styles.aiLoadingText}>Analyzing your roster…</div>
+              <div style={styles.aiLoadingSub}>Orange AI is reviewing your players</div>
+            </div>
+          )}
 
-          {byeRecs.length > 0 && (
-            <RecSection title="⛔ Bye Week — Must Sit" color="#7f1d1d" recs={byeRecs} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
+          {!aiLoading && needsConnect && (
+            <div style={styles.aiEmptyCard}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>🔗</div>
+              <div style={styles.aiEmptyTitle}>Connect Yahoo to get AI advice</div>
+              <button style={styles.connectBtn} onClick={() => router.push('/connect')}>
+                Connect Yahoo Account
+              </button>
+            </div>
           )}
-          {starts.length > 0 && (
-            <RecSection title="✅ Start" color="#22c55e" recs={starts} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
+
+          {!aiLoading && aiAnalysis === '__offseason__' && (
+            <div style={styles.aiEmptyCard}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>🏈</div>
+              <div style={styles.aiEmptyTitle}>Season hasn't started yet</div>
+              <div style={styles.aiEmptySub}>
+                AI start/sit advice will appear here once your league drafts and the season kicks off.
+              </div>
+            </div>
           )}
-          {monitors.length > 0 && (
-            <RecSection title="👀 Monitor" color="#f59e0b" recs={monitors} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
+
+          {!aiLoading && aiError && (
+            <div style={styles.aiErrorCard}>
+              <div>⚠️ {aiError}</div>
+              <button style={styles.retryBtn} onClick={() => window.location.reload()}>Retry</button>
+            </div>
           )}
-          {sits.length > 0 && (
-            <RecSection title="🪑 Sit" color="#ef4444" recs={sits} onMoreInfo={setMoreInfoPlayer} isPremium={isPremium} />
+
+          {!aiLoading && aiAnalysis && aiAnalysis !== '__offseason__' && (
+            <div style={styles.aiCard}>
+              <div style={styles.aiCardHeader}>
+                <span style={styles.aiCardIcon}>🟠</span>
+                <span style={styles.aiCardTitle}>Orange AI Analysis</span>
+                <span style={styles.aiCardBadge}>LIVE</span>
+              </div>
+              <div style={styles.aiCardBody}>
+                {aiAnalysis.split('\n').filter(l => l.trim()).map((line, i) => (
+                  <p key={i} style={{
+                    ...styles.aiLine,
+                    ...(line.match(/^\d\./) ? styles.aiLineHeader : {}),
+                  }}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+              <button style={styles.refreshBtn} onClick={() => window.location.reload()}>
+                ↻ Refresh Analysis
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -680,6 +785,51 @@ const styles = {
     padding: '10px 14px', fontSize: 12, color: '#38bdf8', lineHeight: 1.5, marginTop: 8,
   },
   sheetNoData: { fontSize: 13, color: '#52525b', padding: '20px 0', textAlign: 'center' },
+  aiLoadingCard: {
+    textAlign: 'center', padding: '48px 20px',
+  },
+  aiLoadingIcon: { fontSize: 40, marginBottom: 12, animation: 'pulse 1.5s infinite' },
+  aiLoadingText: { fontSize: 16, fontWeight: 700, marginBottom: 6 },
+  aiLoadingSub: { fontSize: 13, color: '#52525b' },
+  aiEmptyCard: {
+    textAlign: 'center', padding: '40px 20px',
+  },
+  aiEmptyTitle: { fontSize: 15, fontWeight: 700, color: '#f97316', marginBottom: 8 },
+  aiEmptySub: { fontSize: 13, color: '#52525b', lineHeight: 1.5 },
+  connectBtn: {
+    marginTop: 16, background: '#f97316', color: '#000', border: 'none',
+    borderRadius: 10, padding: '12px 24px', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+  },
+  aiErrorCard: {
+    background: '#1a0000', border: '1px solid #7f1d1d', borderRadius: 10,
+    padding: '16px', color: '#f87171', fontSize: 13, textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: 10, background: '#1f1f1f', border: '1px solid #2a2a2a',
+    color: '#a1a1aa', borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
+  },
+  aiCard: {
+    background: '#141414', border: '1px solid #f97316', borderRadius: 14,
+    overflow: 'hidden', marginTop: 8,
+  },
+  aiCardHeader: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#1a1200', padding: '12px 16px', borderBottom: '1px solid #2a2a2a',
+  },
+  aiCardIcon: { fontSize: 18 },
+  aiCardTitle: { fontSize: 14, fontWeight: 800, flex: 1 },
+  aiCardBadge: {
+    background: '#f97316', color: '#000', fontSize: 9, fontWeight: 900,
+    padding: '2px 6px', borderRadius: 4, letterSpacing: '0.5px',
+  },
+  aiCardBody: { padding: '16px' },
+  aiLine: { fontSize: 13, color: '#a1a1aa', lineHeight: 1.6, marginBottom: 8 },
+  aiLineHeader: { color: '#fff', fontWeight: 700, fontSize: 14, marginTop: 12, marginBottom: 4 },
+  refreshBtn: {
+    width: '100%', background: 'transparent', border: 'none',
+    borderTop: '1px solid #2a2a2a', color: '#52525b', padding: '12px',
+    fontSize: 12, cursor: 'pointer', fontWeight: 600,
+  },
   bottomNav: {
     position: 'fixed', bottom: 0, left: 0, right: 0,
     background: '#111', borderTop: '1px solid #1f1f1f', display: 'flex', padding: '10px 0',
