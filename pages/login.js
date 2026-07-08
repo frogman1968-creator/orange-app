@@ -42,7 +42,7 @@ export default function Login() {
     });
 
     if (resetError) {
-      setError(resetError.message);
+      setError(resetError.message || resetError.error_description || JSON.stringify(resetError) || 'Failed to send reset email.');
       setLoading(false);
       return;
     }
@@ -133,7 +133,7 @@ export default function Login() {
           />
 
           <div style={styles.forgotRow}>
-            <span style={styles.link} onClick={() => setShowReset(true)}>
+            <span style={styles.link} onClick={() => { setShowReset(true); setError(null); }}>
               Forgot password?
             </span>
           </div>
