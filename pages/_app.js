@@ -19,7 +19,7 @@ export default function App({ Component, pageProps }) {
         <meta property="og:site_name" content="Orange" />
         <meta property="og:title" content="Orange — Fantasy Football Companion" />
         <meta property="og:description" content="Roster-aware draft picks, opponent matchup grades, bye week alerts, and expert consensus — all in one app." />
-        <meta property="og:url" content="https://orange-app-sigma.vercel.app" />
+        <meta property="og:url" content="https://orangeff.app" />
 
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
