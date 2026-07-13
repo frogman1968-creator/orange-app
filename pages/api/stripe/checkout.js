@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orange-app-sigma.vercel.app';
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orangeff.app';
 
     const session = await stripe.checkout.sessions.create({
       mode: plan === 'monthly' ? 'subscription' : 'payment',

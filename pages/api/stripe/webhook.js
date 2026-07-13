@@ -36,10 +36,21 @@ export default async function handler(req, res) {
   switch (event.type) {
     case 'checkout.session.completed': {
       const customerId = session.customer;
-      const plan      = session.metadata?.plan;
-      const email     = session.customer_details?.email;
-      // supabase_user_id is passed from checkout.js metadata when user is logged in
-      const userId    = session.metadata?.supabase_user_id || null;
+      const plan       = session.metadata?.plan;
+      const email      = session.customer_details?.email;
+
+      // Try metadata first (user was logged in during checkout)
+      let userId = session.metadata?.supabase_user_id || null;
+
+      // Fallback: look up Supabase user by email if no user_id in metadata
+      if (!userId && email) {
+        const { data: users } = await supabase
+          .from('auth.users')
+          .select('id')
+          .eq('email', email)
+          .limit(1);
+        if (users?.[0]?.id) userId = users[0].id;
+      }
 
       await supabase.from('subscriptions').upsert({
         stripe_customer_id: customerId,
@@ -49,6 +60,15 @@ export default async function handler(req, res) {
         status: 'active',
         created_at: new Date().toISOString(),
       }, { onConflict: 'stripe_customer_id' });
+      break;
+    }
+
+    case 'customer.subscription.updated': {
+      const sub = event.data.object;
+      await supabase
+        .from('subscriptions')
+        .update({ status: sub.status })
+        .eq('stripe_customer_id', sub.customer);
       break;
     }
 
