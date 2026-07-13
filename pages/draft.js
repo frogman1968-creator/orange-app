@@ -124,10 +124,17 @@ function DraftCompanion() {
   const [search, setSearch] = useState('');
   const [panel, setPanel] = useState('picks');
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <PageSkeleton />;
+
+  // AI state
+  const [aiRec, setAiRec] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiPickUsed, setAiPickUsed] = useState(null); // track which pick AI rec was for
 
   const { isPremium } = useTrial();
+
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <PageSkeleton />;
 
   const myPickSlots = useMemo(
     () => getSnakePickSlots(draftPosition, numTeams, totalRounds),
@@ -164,6 +171,40 @@ function DraftCompanion() {
 
   function skipOpponentPick() {
     setCurrentOverallPick(prev => prev + 1);
+  }
+
+  async function fetchAiRec() {
+    if (aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiRec(null);
+    setAiPickUsed(currentOverallPick);
+    try {
+      const { data: { session } } = await (await import('../lib/supabaseClient')).supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch('/api/ai/draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          roster: myRoster,
+          available: scoredPlayers,
+          round: currentRound,
+          pick: currentOverallPick,
+          draftPosition,
+          numTeams,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) { setAiError(data.error); return; }
+      setAiRec(data);
+    } catch (e) {
+      setAiError('Could not reach AI. Try again.');
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function undoLastMyPick() {
@@ -334,6 +375,66 @@ function DraftCompanion() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* AI Draft Autopilot */}
+      {isMyTurn && !draftDone && (
+        <div style={styles.aiSection}>
+          {!isPremium ? (
+            <div style={styles.aiLocked} onClick={() => router.push('/pricing')}>
+              🤖 <strong>AI Draft Autopilot</strong> — get an instant AI pick recommendation · <span style={{ textDecoration: 'underline' }}>Upgrade to unlock</span>
+            </div>
+          ) : (
+            <>
+              {!aiRec && !aiLoading && !aiError && (
+                <button style={styles.aiAskBtn} onClick={fetchAiRec}>
+                  🤖 Ask AI — What should I pick?
+                </button>
+              )}
+              {aiLoading && (
+                <div style={styles.aiCard}>
+                  <div style={styles.aiCardHeader}>🤖 AI DRAFT AUTOPILOT</div>
+                  <div style={styles.aiThinking}>Analyzing your roster and available players…</div>
+                </div>
+              )}
+              {aiError && (
+                <div style={styles.aiCard}>
+                  <div style={styles.aiCardHeader}>🤖 AI DRAFT AUTOPILOT</div>
+                  <div style={styles.aiError}>{aiError}</div>
+                  <button style={styles.aiRetryBtn} onClick={fetchAiRec}>Try again</button>
+                </div>
+              )}
+              {aiRec && aiPickUsed === currentOverallPick && (
+                <div style={styles.aiCard}>
+                  <div style={styles.aiCardHeader}>🤖 AI DRAFT AUTOPILOT · R{currentRound}</div>
+                  <div style={styles.aiPickRow}>
+                    <span style={getPosBadge(aiRec.pick?.position)}>{aiRec.pick?.position}</span>
+                    <span style={styles.aiPickName}>{aiRec.pick?.name}</span>
+                    <span style={styles.aiPickTeam}>{aiRec.pick?.team}</span>
+                    {/* Draft this player directly if found in available list */}
+                    {(() => {
+                      const match = available.find(p =>
+                        p.name.toLowerCase().includes((aiRec.pick?.name || '').toLowerCase().split(' ').pop())
+                      );
+                      return match ? (
+                        <button style={styles.aiDraftBtn} onClick={() => { draftPlayer(match); setAiRec(null); }}>
+                          Draft
+                        </button>
+                      ) : null;
+                    })()}
+                  </div>
+                  <div style={styles.aiReason}>{aiRec.reason}</div>
+                  {aiRec.insight && (
+                    <div style={styles.aiInsight}>💡 {aiRec.insight}</div>
+                  )}
+                  <button style={styles.aiRefreshBtn} onClick={fetchAiRec}>
+                    Get another take →
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -700,6 +801,51 @@ const styles = {
   startBtn: {
     width: '100%', background: '#f97316', color: '#fff', border: 'none',
     borderRadius: 12, padding: '14px 0', fontSize: 16, fontWeight: 700, cursor: 'pointer',
+  },
+
+  // AI Autopilot styles
+  aiSection: { padding: '10px 16px', borderBottom: '1px solid #1f1f1f' },
+  aiLocked: {
+    background: '#1a0a00', border: '1px solid #7c2d12',
+    borderRadius: 10, padding: '10px 14px',
+    fontSize: 12, color: '#9a3412', fontWeight: 600, cursor: 'pointer',
+  },
+  aiAskBtn: {
+    width: '100%', background: '#18181b', border: '1px solid #3f3f46',
+    borderRadius: 10, padding: '12px 16px', fontSize: 14, fontWeight: 700,
+    color: '#f97316', cursor: 'pointer', textAlign: 'left',
+  },
+  aiCard: {
+    background: '#0d1117', border: '1px solid #f97316',
+    borderRadius: 10, padding: '12px 14px',
+  },
+  aiCardHeader: {
+    fontSize: 10, fontWeight: 800, color: '#f97316',
+    letterSpacing: '0.8px', marginBottom: 10,
+  },
+  aiThinking: { fontSize: 13, color: '#71717a', fontStyle: 'italic' },
+  aiError: { fontSize: 13, color: '#f87171', marginBottom: 8 },
+  aiRetryBtn: {
+    background: 'transparent', border: '1px solid #3f3f46',
+    borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#71717a', cursor: 'pointer',
+  },
+  aiPickRow: {
+    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
+  },
+  aiPickName: { fontSize: 16, fontWeight: 800, flex: 1 },
+  aiPickTeam: { fontSize: 11, color: '#71717a' },
+  aiDraftBtn: {
+    background: '#f97316', color: '#fff', border: 'none',
+    borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  },
+  aiReason: { fontSize: 13, color: '#d4d4d8', lineHeight: 1.5, marginBottom: 8 },
+  aiInsight: {
+    fontSize: 12, color: '#a1a1aa', background: '#18181b',
+    borderRadius: 6, padding: '8px 10px', marginBottom: 8, lineHeight: 1.4,
+  },
+  aiRefreshBtn: {
+    background: 'transparent', border: 'none',
+    fontSize: 11, color: '#52525b', cursor: 'pointer', padding: 0,
   },
 };
 
