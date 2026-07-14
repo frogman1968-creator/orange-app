@@ -1,0 +1,83 @@
+/**
+ * /api/trash/bets
+ *
+ * GET  ?league_key=X  — list this user's bets for a league
+ * POST              — create a new bet
+ *   Body: { league_key, my_team_key, my_team_name, opp_team_key, opp_team_name, week, stake }
+ */
+
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return res.status(401).json({ error: 'Invalid session' });
+
+  // ── GET ──────────────────────────────────────────────────────────────────────
+  if (req.method === 'GET') {
+    const { league_key } = req.query;
+    if (!league_key) return res.status(400).json({ error: 'league_key required' });
+
+    const { data, error } = await supabase
+      .from('trash_talk_bets')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('league_key', league_key)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ bets: data });
+  }
+
+  // ── POST ─────────────────────────────────────────────────────────────────────
+  if (req.method === 'POST') {
+    const { league_key, my_team_key, my_team_name, opp_team_key, opp_team_name, week, stake } = req.body;
+
+    if (!league_key || !my_team_key || !opp_team_key || !week) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Prevent duplicate bets on the same matchup + week
+    const { data: existing } = await supabase
+      .from('trash_talk_bets')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('league_key', league_key)
+      .eq('opp_team_key', opp_team_key)
+      .eq('week', week)
+      .single();
+
+    if (existing) {
+      return res.status(409).json({ error: 'You already have a bet against this team for this week.' });
+    }
+
+    const { data, error } = await supabase
+      .from('trash_talk_bets')
+      .insert({
+        user_id:       user.id,
+        league_key,
+        my_team_key,
+        my_team_name,
+        opp_team_key,
+        opp_team_name,
+        week:          parseInt(week, 10),
+        stake:         stake?.trim() || 'bragging rights',
+        status:        'pending',
+      })
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(201).json({ bet: data });
+  }
+
+  return res.status(405).end();
+}
