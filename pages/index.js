@@ -5,70 +5,319 @@ import { supabase } from '../lib/supabaseClient';
 export default function Home() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // If already logged in, skip the landing page and go straight to dashboard
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         router.replace('/dashboard');
       } else {
         setChecking(false);
+        // Slight delay so CSS transitions fire after mount
+        setTimeout(() => setVisible(true), 60);
       }
     });
   }, []);
 
   if (checking) {
     return (
-      <div style={{ background: '#0f0f0f', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#0a0a0a', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ fontSize: 36 }}>🟠</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.hero}>
-        <div style={styles.logoWrap}>
-          <div style={styles.logoCircle}>🟠</div>
-          <span style={styles.logoText}>Orange</span>
+    <div className="page">
+
+      {/* Aurora glow layers */}
+      <div className="aurora aurora-1" />
+      <div className="aurora aurora-2" />
+      <div className="aurora aurora-3" />
+
+      <div className="hero">
+
+        {/* Logo */}
+        <div className={`anim-item anim-0 ${visible ? 'anim-in' : ''}`}>
+          <div className="logo-wrap">
+            <div className="logo-orb">🟠</div>
+            <span className="logo-text">Orange</span>
+          </div>
         </div>
 
-        <h1 style={styles.headline}>
-          Your Fantasy Football<br />
-          <span style={styles.accent}>Companion.</span>
-        </h1>
+        {/* Headline */}
+        <div className={`anim-item anim-1 ${visible ? 'anim-in' : ''}`}>
+          <h1 className="headline">
+            Your Fantasy Football<br />
+            <span className="accent">Companion.</span>
+          </h1>
+        </div>
 
-        <p style={styles.sub}>
-          Roster-aware draft picks. Opponent-aware lineups.<br />
-          No lag. No ads. No garbage.
-        </p>
+        {/* Sub */}
+        <div className={`anim-item anim-2 ${visible ? 'anim-in' : ''}`}>
+          <p className="sub">
+            Roster-aware draft picks. Opponent-aware lineups.<br />
+            No lag. No ads. No garbage.
+          </p>
+        </div>
 
-        <div style={styles.features}>
+        {/* Feature cards */}
+        <div className={`features anim-item anim-3 ${visible ? 'anim-in' : ''}`}>
           {FEATURES.map(f => (
-            <div key={f.title} style={styles.featureCard}>
-              <span style={styles.featureIcon}>{f.icon}</span>
+            <div key={f.title} className="feature-card">
+              <span className="feature-icon">{f.icon}</span>
               <div>
-                <div style={styles.featureTitle}>{f.title}</div>
-                <div style={styles.featureSub}>{f.desc}</div>
+                <div className="feature-title">{f.title}</div>
+                <div className="feature-sub">{f.desc}</div>
               </div>
             </div>
           ))}
         </div>
 
-        <button
-          onClick={() => router.push('/signup')}
-          style={styles.ctaButton}
-        >
-          Get Started Free →
-        </button>
+        {/* CTA */}
+        <div className={`anim-item anim-4 ${visible ? 'anim-in' : ''}`} style={{ width: '100%' }}>
+          <button className="cta-btn" onClick={() => router.push('/signup')}>
+            <span className="cta-shimmer" />
+            Get Started Free →
+          </button>
+        </div>
 
-        <p style={styles.signin}>
-          Already have an account?{' '}
-          <span style={styles.signinLink} onClick={() => router.push('/login')}>Sign in</span>
-        </p>
+        {/* Sign in link */}
+        <div className={`anim-item anim-5 ${visible ? 'anim-in' : ''}`}>
+          <p className="signin-row">
+            Already have an account?{' '}
+            <span className="signin-link" onClick={() => router.push('/login')}>Sign in</span>
+          </p>
+        </div>
 
-        <p style={styles.disclaimer}>14-day free trial · No credit card required</p>
+        <div className={`anim-item anim-5 ${visible ? 'anim-in' : ''}`}>
+          <p className="disclaimer">14-day free trial · No credit card required</p>
+        </div>
+
       </div>
+
+      <style jsx>{`
+
+        /* ── Page ─────────────────────────────── */
+        .page {
+          min-height: 100vh;
+          background: #080808;
+          color: #fff;
+          font-family: 'Inter', -apple-system, sans-serif;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 0 20px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        /* ── Aurora glow ──────────────────────── */
+        .aurora {
+          position: fixed;
+          border-radius: 50%;
+          filter: blur(80px);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .aurora-1 {
+          width: 600px;
+          height: 600px;
+          background: radial-gradient(circle, rgba(249,115,22,0.18) 0%, transparent 70%);
+          top: -150px;
+          left: 50%;
+          transform: translateX(-50%);
+          animation: pulse1 6s ease-in-out infinite;
+        }
+        .aurora-2 {
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(249,115,22,0.10) 0%, transparent 70%);
+          bottom: 0;
+          left: -100px;
+          animation: pulse2 8s ease-in-out infinite;
+        }
+        .aurora-3 {
+          width: 350px;
+          height: 350px;
+          background: radial-gradient(circle, rgba(234,88,12,0.08) 0%, transparent 70%);
+          bottom: 100px;
+          right: -80px;
+          animation: pulse3 7s ease-in-out infinite;
+        }
+
+        @keyframes pulse1 {
+          0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+          50%       { opacity: 0.6; transform: translateX(-50%) scale(1.15); }
+        }
+        @keyframes pulse2 {
+          0%, 100% { opacity: 1; transform: scale(1) translate(0, 0); }
+          50%       { opacity: 0.5; transform: scale(1.2) translate(20px, -20px); }
+        }
+        @keyframes pulse3 {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.6; transform: scale(1.1) translate(-10px, 10px); }
+        }
+
+        /* ── Hero ─────────────────────────────── */
+        .hero {
+          max-width: 620px;
+          width: 100%;
+          padding-top: 80px;
+          padding-bottom: 80px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          gap: 24px;
+          position: relative;
+          z-index: 1;
+        }
+
+        /* ── Entrance animations ──────────────── */
+        .anim-item {
+          opacity: 0;
+          transform: translateY(24px);
+          transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .anim-item.anim-in { opacity: 1; transform: translateY(0); }
+
+        .anim-0 { transition-delay: 0ms; }
+        .anim-1 { transition-delay: 100ms; }
+        .anim-2 { transition-delay: 200ms; }
+        .anim-3 { transition-delay: 320ms; }
+        .anim-4 { transition-delay: 460ms; }
+        .anim-5 { transition-delay: 560ms; }
+
+        /* ── Logo ─────────────────────────────── */
+        .logo-wrap {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .logo-orb {
+          font-size: 40px;
+          animation: spin-bob 4s ease-in-out infinite;
+          filter: drop-shadow(0 0 16px rgba(249,115,22,0.6));
+        }
+        @keyframes spin-bob {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          25%       { transform: translateY(-4px) rotate(3deg); }
+          75%       { transform: translateY(2px) rotate(-2deg); }
+        }
+        .logo-text {
+          font-size: 28px;
+          font-weight: 800;
+          letter-spacing: -0.5px;
+          color: #fff;
+        }
+
+        /* ── Headline ─────────────────────────── */
+        .headline {
+          font-size: clamp(36px, 6vw, 52px);
+          font-weight: 800;
+          line-height: 1.1;
+          letter-spacing: -1.5px;
+          margin: 0;
+        }
+        .accent {
+          background: linear-gradient(90deg, #f97316, #fb923c, #f97316);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          animation: gradient-shift 3s linear infinite;
+        }
+        @keyframes gradient-shift {
+          0%   { background-position: 0% center; }
+          100% { background-position: 200% center; }
+        }
+
+        /* ── Sub ──────────────────────────────── */
+        .sub {
+          font-size: 17px;
+          color: #a1a1aa;
+          line-height: 1.65;
+          margin: 0;
+        }
+
+        /* ── Feature cards ────────────────────── */
+        .features {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          width: 100%;
+        }
+        .feature-card {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 14px;
+          padding: 16px 20px;
+          text-align: left;
+          transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+          cursor: default;
+        }
+        .feature-card:hover {
+          border-color: rgba(249,115,22,0.45);
+          box-shadow: 0 0 22px rgba(249,115,22,0.12), inset 0 0 20px rgba(249,115,22,0.04);
+          transform: translateY(-2px);
+        }
+        .feature-icon { font-size: 28px; flex-shrink: 0; }
+        .feature-title { font-weight: 700; font-size: 15px; margin-bottom: 3px; color: #fff; }
+        .feature-sub { font-size: 13px; color: '#71717a'; line-height: 1.45; color: #71717a; }
+
+        /* ── CTA button ───────────────────────── */
+        .cta-btn {
+          position: relative;
+          overflow: hidden;
+          width: 100%;
+          background: #f97316;
+          color: #fff;
+          border: none;
+          border-radius: 14px;
+          padding: 17px 36px;
+          font-size: 17px;
+          font-weight: 800;
+          cursor: pointer;
+          letter-spacing: -0.2px;
+          box-shadow: 0 4px 24px rgba(249,115,22,0.35);
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .cta-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 32px rgba(249,115,22,0.5);
+        }
+        .cta-btn:active { transform: translateY(0); }
+
+        /* Shimmer sweep */
+        .cta-shimmer {
+          position: absolute;
+          top: 0; left: -75%;
+          width: 50%;
+          height: 100%;
+          background: linear-gradient(
+            120deg,
+            transparent 30%,
+            rgba(255,255,255,0.25) 50%,
+            transparent 70%
+          );
+          animation: shimmer-sweep 2.8s ease-in-out infinite;
+        }
+        @keyframes shimmer-sweep {
+          0%   { left: -75%; }
+          60%, 100% { left: 125%; }
+        }
+
+        /* ── Sign in / disclaimer ─────────────── */
+        .signin-row { font-size: 14px; color: #71717a; margin: 0; }
+        .signin-link { color: #f97316; cursor: pointer; font-weight: 700; }
+        .signin-link:hover { text-decoration: underline; }
+        .disclaimer { font-size: 13px; color: #3f3f46; margin: 0; }
+
+      `}</style>
     </div>
   );
 }
@@ -80,9 +329,9 @@ const FEATURES = [
     desc: 'See the players you actually need — not a wall of 300 names.',
   },
   {
-    icon: '📊',
-    title: 'Live ADP Rankings',
-    desc: 'Rankings update with injuries & news. No stale queues.',
+    icon: '🤖',
+    title: 'AI Start/Sit Engine',
+    desc: 'Claude-powered recommendations tailored to your roster and matchup.',
   },
   {
     icon: '⚔️',
@@ -95,90 +344,3 @@ const FEATURES = [
     desc: 'Injury flags and waiver wire moves when it matters.',
   },
 ];
-
-const styles = {
-  page: {
-    minHeight: '100vh',
-    background: '#0f0f0f',
-    color: '#fff',
-    fontFamily: "'Inter', -apple-system, sans-serif",
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '0 20px',
-  },
-  hero: {
-    maxWidth: 640,
-    width: '100%',
-    paddingTop: 80,
-    paddingBottom: 80,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center',
-    gap: 24,
-  },
-  logoWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  logoCircle: { fontSize: 36 },
-  logoText: {
-    fontSize: 28,
-    fontWeight: 700,
-    letterSpacing: '-0.5px',
-    color: '#fff',
-  },
-  headline: {
-    fontSize: 48,
-    fontWeight: 800,
-    lineHeight: 1.1,
-    letterSpacing: '-1px',
-    margin: 0,
-  },
-  accent: { color: '#f97316' },
-  sub: {
-    fontSize: 18,
-    color: '#a1a1aa',
-    lineHeight: 1.6,
-    margin: 0,
-  },
-  features: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-    width: '100%',
-    marginTop: 8,
-  },
-  featureCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    background: '#1a1a1a',
-    borderRadius: 12,
-    padding: '16px 20px',
-    textAlign: 'left',
-    border: '1px solid #2a2a2a',
-  },
-  featureIcon: { fontSize: 28, flexShrink: 0 },
-  featureTitle: { fontWeight: 600, fontSize: 15, marginBottom: 2 },
-  featureSub: { fontSize: 13, color: '#71717a', lineHeight: 1.4 },
-  ctaButton: {
-    background: '#f97316',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 12,
-    padding: '16px 36px',
-    fontSize: 17,
-    fontWeight: 700,
-    cursor: 'pointer',
-    marginTop: 8,
-    letterSpacing: '-0.2px',
-    width: '100%',
-  },
-  signin: { fontSize: 13, color: '#71717a', margin: 0 },
-  signinLink: { color: '#f97316', cursor: 'pointer', fontWeight: 600 },
-  disclaimer: { fontSize: 13, color: '#52525b', margin: 0 },
-};
