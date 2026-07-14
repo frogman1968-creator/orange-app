@@ -47,7 +47,6 @@ export default async function handler(req, res) {
     }
 
     const tokens = await tokenRes.json();
-    console.log('Token keys:', Object.keys(tokens));
 
     // Yahoo sometimes omits xoauth_yahoo_guid — fetch from userinfo if missing
     let yahooGuid = tokens.xoauth_yahoo_guid;
@@ -59,7 +58,6 @@ export default async function handler(req, res) {
         if (userInfoRes.ok) {
           const userInfo = await userInfoRes.json();
           yahooGuid = userInfo.sub;
-          console.log('Got yahoo_guid from userinfo:', yahooGuid);
         }
       } catch (e) {
         console.warn('Could not fetch Yahoo userinfo:', e.message);
@@ -85,8 +83,6 @@ export default async function handler(req, res) {
     }
 
     // Store tokens in Supabase, linked to user_id if available
-    console.log('Token keys:', Object.keys(tokens));
-    console.log('yahoo_guid:', yahooGuid, 'user_id:', userId);
 
     const { error: upsertError } = await supabase.from('yahoo_tokens').upsert({
       yahoo_guid:    yahooGuid || null,
@@ -102,7 +98,6 @@ export default async function handler(req, res) {
       return res.redirect(`${appUrl}/connect?error=${encodeURIComponent(upsertError.message)}`);
     }
 
-    console.log('Tokens stored successfully');
     return res.redirect(`${appUrl}/connect?connected=true`);
 
   } catch (err) {
