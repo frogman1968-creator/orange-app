@@ -39,9 +39,8 @@ export default function Home() {
 
         {/* Logo */}
         <div className={`anim-item anim-0 ${visible ? 'anim-in' : ''}`}>
-          <div className="logo-wrap">
-            <div className="logo-orb">🟠</div>
-            <span className="logo-text">Orange</span>
+          <div className="logo-mark">
+            <span className="logo-mark-text">Orange</span>
           </div>
         </div>
 
@@ -189,27 +188,46 @@ export default function Home() {
         .anim-4 { transition-delay: 460ms; }
         .anim-5 { transition-delay: 560ms; }
 
-        /* ── Logo ─────────────────────────────── */
-        .logo-wrap {
+        /* ── Logo mark ────────────────────────── */
+        .logo-mark {
+          width: 130px;
+          height: 130px;
+          border-radius: 50%;
+          background: linear-gradient(145deg, #fb923c, #f97316, #ea580c);
           display: flex;
           align-items: center;
-          gap: 10px;
+          justify-content: center;
+          animation: logo-bob 4s ease-in-out infinite, logo-pulse 3s ease-in-out infinite;
+          box-shadow:
+            0 0 40px rgba(249,115,22,0.55),
+            0 0 80px rgba(249,115,22,0.25),
+            0 0 0 8px rgba(249,115,22,0.08);
         }
-        .logo-orb {
-          font-size: 40px;
-          animation: spin-bob 4s ease-in-out infinite;
-          filter: drop-shadow(0 0 16px rgba(249,115,22,0.6));
-        }
-        @keyframes spin-bob {
-          0%, 100% { transform: translateY(0) rotate(0deg); }
-          25%       { transform: translateY(-4px) rotate(3deg); }
-          75%       { transform: translateY(2px) rotate(-2deg); }
-        }
-        .logo-text {
-          font-size: 28px;
-          font-weight: 800;
+        .logo-mark-text {
+          color: #111;
+          font-size: 24px;
+          font-weight: 900;
           letter-spacing: -0.5px;
-          color: #fff;
+          font-family: 'Inter', -apple-system, sans-serif;
+        }
+        @keyframes logo-bob {
+          0%, 100% { transform: translateY(0); }
+          40%       { transform: translateY(-6px); }
+          70%       { transform: translateY(3px); }
+        }
+        @keyframes logo-pulse {
+          0%, 100% {
+            box-shadow:
+              0 0 40px rgba(249,115,22,0.55),
+              0 0 80px rgba(249,115,22,0.25),
+              0 0 0 8px rgba(249,115,22,0.08);
+          }
+          50% {
+            box-shadow:
+              0 0 60px rgba(249,115,22,0.75),
+              0 0 110px rgba(249,115,22,0.35),
+              0 0 0 14px rgba(249,115,22,0.12);
+          }
         }
 
         /* ── Headline ─────────────────────────── */
