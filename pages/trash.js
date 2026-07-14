@@ -1,6 +1,6 @@
 /**
  * pages/trash.js — Trash Talk Table
- * Side-bet challenge system. Pick an opponent, name your stake, let Orange settle it.
+ * Side-bet challenges with position-group scoring, payment confirmation, and deadbeat board.
  */
 
 import { useState, useEffect } from 'react';
@@ -8,6 +8,17 @@ import { useRouter } from 'next/router';
 import { withAuth } from '../lib/withAuth';
 import { useTrial } from '../lib/useTrial';
 import { supabase } from '../lib/supabaseClient';
+
+const BET_TYPES = [
+  { value: 'total_score', label: 'Total Team Score' },
+  { value: 'rb_pts',      label: 'RB Points Only' },
+  { value: 'wr_pts',      label: 'WR Points Only' },
+  { value: 'qb_pts',      label: 'QB Points Only' },
+  { value: 'te_pts',      label: 'TE Points Only' },
+  { value: 'flex_pts',    label: 'Flex (RB/WR/TE)' },
+];
+
+const BET_TYPE_LABEL = Object.fromEntries(BET_TYPES.map(b => [b.value, b.label]));
 
 function PageSkeleton() {
   return (
@@ -18,41 +29,39 @@ function PageSkeleton() {
 }
 
 function TrashTalk() {
-  const router   = useRouter();
+  const router = useRouter();
   const { isPremium } = useTrial();
   const [mounted, setMounted] = useState(false);
 
-  // League + team context
-  const [leagueKey,   setLeagueKey]   = useState('');
-  const [teamKey,     setTeamKey]     = useState('');
-  const [teamName,    setTeamName]    = useState('');
-  const [week,        setWeek]        = useState(null);
-  const [leagueTeams, setLeagueTeams] = useState([]); // all teams in the league
+  const [leagueKey,    setLeagueKey]    = useState('');
+  const [teamKey,      setTeamKey]      = useState('');
+  const [teamName,     setTeamName]     = useState('');
+  const [week,         setWeek]         = useState(null);
+  const [leagueTeams,  setLeagueTeams]  = useState([]);
 
-  // Bets
-  const [bets,        setBets]        = useState([]);
-  const [loading,     setLoading]     = useState(true);
+  const [bets,         setBets]         = useState([]);
+  const [loading,      setLoading]      = useState(true);
   const [needsConnect, setNeedsConnect] = useState(false);
-  const [error,       setError]       = useState('');
+  const [error,        setError]        = useState('');
 
   // New bet form
-  const [showForm,    setShowForm]    = useState(false);
-  const [formOpp,     setFormOpp]     = useState('');
-  const [formStake,   setFormStake]   = useState('');
-  const [formWeek,    setFormWeek]    = useState('');
-  const [formError,   setFormError]   = useState('');
-  const [formSaving,  setFormSaving]  = useState(false);
+  const [showForm,   setShowForm]   = useState(false);
+  const [formOpp,    setFormOpp]    = useState('');
+  const [formStake,  setFormStake]  = useState('');
+  const [formWeek,   setFormWeek]   = useState('');
+  const [formType,   setFormType]   = useState('total_score');
+  const [formError,  setFormError]  = useState('');
+  const [formSaving, setFormSaving] = useState(false);
 
   // Settle
-  const [settling,    setSettling]    = useState(false);
-  const [settleMsg,   setSettleMsg]   = useState('');
+  const [settling,  setSettling]  = useState(false);
+  const [settleMsg, setSettleMsg] = useState('');
+
+  // Confirm payment
+  const [confirming, setConfirming] = useState(null); // bet_id being confirmed
 
   useEffect(() => { setMounted(true); }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    loadData();
-  }, [mounted]);
+  useEffect(() => { if (mounted) loadData(); }, [mounted]);
 
   async function getAuthHeader() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -64,7 +73,6 @@ function TrashTalk() {
     try {
       const headers = await getAuthHeader();
 
-      // Get user's teams
       const teamsRes = await fetch('/api/yahoo/myteams', { headers });
       if (teamsRes.status === 404) { setNeedsConnect(true); setLoading(false); return; }
       if (!teamsRes.ok) { setError('Could not load Yahoo data.'); setLoading(false); return; }
@@ -73,35 +81,27 @@ function TrashTalk() {
       if (!teams?.length) { setNeedsConnect(true); setLoading(false); return; }
 
       const { leagueKey: lk, teamKey: tk, name: tn } = teams[0];
-      setLeagueKey(lk);
-      setTeamKey(tk);
-      setTeamName(tn);
+      setLeagueKey(lk); setTeamKey(tk); setTeamName(tn);
 
-      // Get league standings for opponent list
       const standRes = await fetch(`/api/yahoo/standings?league_key=${encodeURIComponent(lk)}`, { headers });
       if (standRes.ok) {
         const { teams: allTeams } = await standRes.json();
         setLeagueTeams((allTeams || []).filter(t => t.teamKey !== tk));
       }
 
-      // Try to get current week from matchup
       const matchRes = await fetch(`/api/yahoo/dashboard?league_key=${encodeURIComponent(lk)}&team_key=${encodeURIComponent(tk)}`, { headers });
       if (matchRes.ok) {
         const dash = await matchRes.json();
         const currentWeek = dash?.matchup?.week;
-        if (currentWeek) {
-          setWeek(currentWeek);
-          setFormWeek(String(currentWeek));
-        }
+        if (currentWeek) { setWeek(currentWeek); setFormWeek(String(currentWeek)); }
       }
 
-      // Load existing bets
       const betsRes = await fetch(`/api/trash/bets?league_key=${encodeURIComponent(lk)}`, { headers });
       if (betsRes.ok) {
         const { bets: b } = await betsRes.json();
         setBets(b || []);
       }
-    } catch (e) {
+    } catch {
       setError('Something went wrong loading your data.');
     } finally {
       setLoading(false);
@@ -109,39 +109,28 @@ function TrashTalk() {
   }
 
   async function submitBet() {
-    if (!formOpp) { setFormError('Pick an opponent.'); return; }
-    if (!formWeek) { setFormError('Enter a week number.'); return; }
-    if (!formStake.trim()) { setFormError('Name your stake — what does the loser owe?'); return; }
+    if (!formOpp)         { setFormError('Pick an opponent.');                             return; }
+    if (!formWeek)        { setFormError('Enter a week number.');                          return; }
+    if (!formStake.trim()){ setFormError('Name your stake — what does the loser owe?');   return; }
 
     const opp = leagueTeams.find(t => t.teamKey === formOpp);
     if (!opp) { setFormError('Opponent not found.'); return; }
 
-    setFormSaving(true);
-    setFormError('');
-
+    setFormSaving(true); setFormError('');
     try {
       const headers = { ...(await getAuthHeader()), 'Content-Type': 'application/json' };
       const res = await fetch('/api/trash/bets', {
-        method: 'POST',
-        headers,
+        method: 'POST', headers,
         body: JSON.stringify({
-          league_key:    leagueKey,
-          my_team_key:   teamKey,
-          my_team_name:  teamName,
-          opp_team_key:  opp.teamKey,
-          opp_team_name: opp.name,
-          week:          parseInt(formWeek, 10),
-          stake:         formStake.trim(),
+          league_key: leagueKey, my_team_key: teamKey, my_team_name: teamName,
+          opp_team_key: opp.teamKey, opp_team_name: opp.name,
+          week: parseInt(formWeek, 10), stake: formStake.trim(), bet_type: formType,
         }),
       });
-
       const data = await res.json();
       if (!res.ok) { setFormError(data.error || 'Could not create bet.'); return; }
-
       setBets(prev => [data.bet, ...prev]);
-      setShowForm(false);
-      setFormOpp('');
-      setFormStake('');
+      setShowForm(false); setFormOpp(''); setFormStake(''); setFormType('total_score');
     } catch {
       setFormError('Network error — try again.');
     } finally {
@@ -151,27 +140,20 @@ function TrashTalk() {
 
   async function settleBets() {
     if (!week) return;
-    setSettling(true);
-    setSettleMsg('');
+    setSettling(true); setSettleMsg('');
     try {
       const headers = { ...(await getAuthHeader()), 'Content-Type': 'application/json' };
       const res = await fetch('/api/trash/settle', {
-        method: 'POST',
-        headers,
+        method: 'POST', headers,
         body: JSON.stringify({ league_key: leagueKey, week }),
       });
       const data = await res.json();
       if (!res.ok) { setSettleMsg(`Error: ${data.error || 'Could not settle.'}`); return; }
-
       if (data.resolved > 0) {
-        // Merge resolved bets into state
-        setBets(prev => prev.map(b => {
-          const updated = data.bets.find(u => u.id === b.id);
-          return updated || b;
-        }));
+        setBets(prev => prev.map(b => data.bets.find(u => u.id === b.id) || b));
         setSettleMsg(`✅ Settled ${data.resolved} bet${data.resolved !== 1 ? 's' : ''}!`);
       } else {
-        setSettleMsg("Scores aren't final yet — check back later.");
+        setSettleMsg("Scores aren't final yet — check back after the games.");
       }
     } catch {
       setSettleMsg('Could not reach Yahoo. Try again.');
@@ -180,48 +162,73 @@ function TrashTalk() {
     }
   }
 
+  async function confirmPayment(betId, action) {
+    setConfirming(betId);
+    try {
+      const headers = { ...(await getAuthHeader()), 'Content-Type': 'application/json' };
+      const res = await fetch('/api/trash/confirm', {
+        method: 'POST', headers,
+        body: JSON.stringify({ bet_id: betId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Could not update bet.'); return; }
+      setBets(prev => prev.map(b => b.id === betId ? data.bet : b));
+    } catch {
+      alert('Network error — try again.');
+    } finally {
+      setConfirming(null);
+    }
+  }
+
   if (!mounted || loading) return <PageSkeleton />;
 
-  // Stats
-  const won  = bets.filter(b => b.status === 'won').length;
-  const lost = bets.filter(b => b.status === 'lost').length;
-  const tied = bets.filter(b => b.status === 'tied').length;
+  const won     = bets.filter(b => b.status === 'won').length;
+  const lost    = bets.filter(b => b.status === 'lost').length;
+  const tied    = bets.filter(b => b.status === 'tied').length;
   const pending = bets.filter(b => b.status === 'pending').length;
+
+  // Deadbeats: opponents flagged as deadbeat across all bets
+  const deadbeats = bets
+    .filter(b => b.payment_status === 'deadbeat')
+    .reduce((acc, b) => {
+      if (!acc[b.opp_team_key]) acc[b.opp_team_key] = { name: b.opp_team_name, count: 0 };
+      acc[b.opp_team_key].count++;
+      return acc;
+    }, {});
+  const deadbeatList = Object.values(deadbeats).sort((a, b) => b.count - a.count);
 
   const statusColor = { won: '#22c55e', lost: '#ef4444', tied: '#a1a1aa', pending: '#f97316' };
   const statusLabel = { won: '✅ Won', lost: '💀 Lost', tied: '🤝 Tied', pending: '⏳ Live' };
+  const payColor    = { paid: '#22c55e', deadbeat: '#ef4444', pending_payment: '#f97316', 'n/a': 'transparent' };
 
   return (
     <div style={s.page}>
 
-      {/* Header */}
       <div style={s.header}>
         <button style={s.backBtn} onClick={() => router.push('/dashboard')}>← Back</button>
         <div style={s.headerTitle}>🔥 Trash Talk Table</div>
         <div style={{ width: 60 }} />
       </div>
 
-      {/* Connect banner */}
       {needsConnect && (
         <div style={s.connectBanner}>
-          🔗 Connect your Yahoo account to start trash talking.{' '}
+          🔗 Connect your Yahoo account first.{' '}
           <span style={s.connectLink} onClick={() => router.push('/connect')}>Connect →</span>
         </div>
       )}
-
       {error && <div style={s.errorBanner}>{error}</div>}
 
       {!needsConnect && !error && (
         <>
           {/* Scoreboard */}
           <div style={s.scoreboard}>
-            <ScoreChip label="Wins" value={won} color="#22c55e" />
-            <ScoreChip label="Losses" value={lost} color="#ef4444" />
-            <ScoreChip label="Tied" value={tied} color="#71717a" />
+            <ScoreChip label="Wins"    value={won}     color="#22c55e" />
+            <ScoreChip label="Losses"  value={lost}    color="#ef4444" />
+            <ScoreChip label="Tied"    value={tied}    color="#71717a" />
             <ScoreChip label="Pending" value={pending} color="#f97316" />
           </div>
 
-          {/* Actions row */}
+          {/* Actions */}
           <div style={s.actionsRow}>
             <button style={s.newBetBtn} onClick={() => setShowForm(v => !v)}>
               {showForm ? '✕ Cancel' : '+ New Bet'}
@@ -241,35 +248,33 @@ function TrashTalk() {
               <div style={s.formTitle}>New Bet — Week {formWeek}</div>
 
               <label style={s.label}>Opponent</label>
-              {leagueTeams.length === 0 ? (
-                <div style={s.noTeams}>League data loading…</div>
-              ) : (
-                <select style={s.select} value={formOpp} onChange={e => setFormOpp(e.target.value)}>
-                  <option value="">Pick a team…</option>
-                  {leagueTeams.map(t => (
-                    <option key={t.teamKey} value={t.teamKey}>{t.name}</option>
-                  ))}
-                </select>
-              )}
+              {leagueTeams.length === 0
+                ? <div style={{ color: '#52525b', fontSize: 13 }}>Loading league…</div>
+                : (
+                  <select style={s.select} value={formOpp} onChange={e => setFormOpp(e.target.value)}>
+                    <option value="">Pick a team…</option>
+                    {leagueTeams.map(t => <option key={t.teamKey} value={t.teamKey}>{t.name}</option>)}
+                  </select>
+                )
+              }
+
+              <label style={s.label}>Bet Type</label>
+              <select style={s.select} value={formType} onChange={e => setFormType(e.target.value)}>
+                {BET_TYPES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+              </select>
 
               <label style={s.label}>Week</label>
               <input
-                style={s.input}
-                type="number"
-                min="1"
-                max="18"
-                value={formWeek}
-                onChange={e => setFormWeek(e.target.value)}
+                style={s.input} type="number" min="1" max="18"
+                value={formWeek} onChange={e => setFormWeek(e.target.value)}
                 placeholder="Week number"
               />
 
               <label style={s.label}>Stake — what does the loser owe?</label>
               <input
-                style={s.input}
-                type="text"
-                value={formStake}
-                onChange={e => setFormStake(e.target.value)}
-                placeholder="e.g. buys lunch, posts on IG, bragging rights…"
+                style={s.input} type="text"
+                value={formStake} onChange={e => setFormStake(e.target.value)}
+                placeholder="buys lunch · posts on IG · bragging rights…"
                 maxLength={120}
               />
 
@@ -281,7 +286,7 @@ function TrashTalk() {
             </div>
           )}
 
-          {/* Bets list */}
+          {/* Bets List */}
           {bets.length === 0 ? (
             <div style={s.empty}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>🤐</div>
@@ -305,6 +310,7 @@ function TrashTalk() {
 
                   <div style={s.betMeta}>
                     <span style={s.metaChip}>Week {bet.week}</span>
+                    <span style={s.metaChip}>{BET_TYPE_LABEL[bet.bet_type] || bet.bet_type}</span>
                     {bet.my_pts !== null && bet.opp_pts !== null && (
                       <span style={s.metaChip}>
                         {Number(bet.my_pts).toFixed(1)} – {Number(bet.opp_pts).toFixed(1)}
@@ -315,6 +321,49 @@ function TrashTalk() {
                   <div style={s.betStake}>
                     🎯 Stake: <span style={s.stakeText}>{bet.stake}</span>
                   </div>
+
+                  {/* Payment status badge */}
+                  {bet.payment_status !== 'n/a' && (
+                    <div style={{ ...s.payBadge, background: payColor[bet.payment_status] + '22', color: payColor[bet.payment_status] }}>
+                      {bet.payment_status === 'pending_payment' && '💰 Waiting on payment'}
+                      {bet.payment_status === 'paid'            && '✅ Paid up'}
+                      {bet.payment_status === 'deadbeat'        && '💀 DEADBEAT — not paid'}
+                    </div>
+                  )}
+
+                  {/* Winner confirmation buttons */}
+                  {bet.status === 'won' && bet.payment_status === 'pending_payment' && (
+                    <div style={s.confirmRow}>
+                      <button
+                        style={s.paidBtn}
+                        onClick={() => confirmPayment(bet.id, 'paid')}
+                        disabled={confirming === bet.id}
+                      >
+                        {confirming === bet.id ? '…' : '✅ They Paid'}
+                      </button>
+                      <button
+                        style={s.deadbeatBtn}
+                        onClick={() => confirmPayment(bet.id, 'deadbeat')}
+                        disabled={confirming === bet.id}
+                      >
+                        {confirming === bet.id ? '…' : '💀 Deadbeat'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Deadbeat Board */}
+          {deadbeatList.length > 0 && (
+            <div style={s.deadbeatBoard}>
+              <div style={s.deadbeatTitle}>💀 League Deadbeat Board</div>
+              <div style={s.deadbeatSub}>Teams that haven't paid their debts</div>
+              {deadbeatList.map(d => (
+                <div key={d.name} style={s.deadbeatRow}>
+                  <span style={s.deadbeatName}>{d.name}</span>
+                  <span style={s.deadbeatCount}>{d.count} unpaid bet{d.count !== 1 ? 's' : ''}</span>
                 </div>
               ))}
             </div>
@@ -324,6 +373,7 @@ function TrashTalk() {
 
       <style jsx>{`
         select option { background: #1a1a1a; color: #fff; }
+        input::placeholder { color: #3f3f46; }
       `}</style>
     </div>
   );
@@ -338,258 +388,51 @@ function ScoreChip({ label, value, color }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const s = {
-  page: {
-    background: '#0a0a0a',
-    minHeight: '100vh',
-    color: '#fff',
-    fontFamily: "'Inter', -apple-system, sans-serif",
-    paddingBottom: 40,
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 16px 8px',
-    borderBottom: '1px solid #1f1f1f',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: 800,
-    color: '#fff',
-  },
-  backBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#f97316',
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: 'pointer',
-    padding: 0,
-    width: 60,
-  },
-  connectBanner: {
-    margin: '16px',
-    padding: '14px 16px',
-    background: 'rgba(249,115,22,0.08)',
-    border: '1px solid rgba(249,115,22,0.3)',
-    borderRadius: 12,
-    fontSize: 14,
-    color: '#f97316',
-  },
-  connectLink: {
-    fontWeight: 700,
-    cursor: 'pointer',
-    textDecoration: 'underline',
-  },
-  errorBanner: {
-    margin: '16px',
-    padding: '12px 16px',
-    background: 'rgba(239,68,68,0.08)',
-    border: '1px solid rgba(239,68,68,0.25)',
-    borderRadius: 12,
-    fontSize: 14,
-    color: '#ef4444',
-  },
-  scoreboard: {
-    display: 'flex',
-    justifyContent: 'space-around',
-    padding: '20px 16px',
-    background: '#111',
-    margin: '16px',
-    borderRadius: 16,
-    border: '1px solid #1f1f1f',
-  },
-  actionsRow: {
-    display: 'flex',
-    gap: 10,
-    padding: '0 16px 12px',
-  },
-  newBetBtn: {
-    flex: 1,
-    background: '#f97316',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 12,
-    padding: '13px 20px',
-    fontSize: 15,
-    fontWeight: 800,
-    cursor: 'pointer',
-  },
-  settleBtn: {
-    flex: 1,
-    background: 'transparent',
-    color: '#f97316',
-    border: '1.5px solid #f97316',
-    borderRadius: 12,
-    padding: '13px 20px',
-    fontSize: 15,
-    fontWeight: 800,
-    cursor: 'pointer',
-  },
-  settleMsg: {
-    margin: '0 16px 12px',
-    padding: '10px 14px',
-    background: 'rgba(249,115,22,0.06)',
-    border: '1px solid #2a2a2a',
-    borderRadius: 10,
-    fontSize: 13,
-    color: '#a1a1aa',
-  },
-  form: {
-    margin: '0 16px 20px',
-    padding: '20px',
-    background: '#111',
-    border: '1px solid #1f1f1f',
-    borderRadius: 16,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  formTitle: {
-    fontSize: 15,
-    fontWeight: 800,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  label: {
-    fontSize: 12,
-    color: '#71717a',
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: -4,
-  },
-  select: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    borderRadius: 10,
-    color: '#fff',
-    padding: '12px 14px',
-    fontSize: 14,
-    width: '100%',
-    appearance: 'none',
-    cursor: 'pointer',
-  },
-  input: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    borderRadius: 10,
-    color: '#fff',
-    padding: '12px 14px',
-    fontSize: 14,
-    width: '100%',
-    boxSizing: 'border-box',
-    outline: 'none',
-  },
-  noTeams: {
-    color: '#52525b',
-    fontSize: 13,
-  },
-  formError: {
-    color: '#ef4444',
-    fontSize: 13,
-    padding: '8px 12px',
-    background: 'rgba(239,68,68,0.06)',
-    borderRadius: 8,
-  },
-  submitBtn: {
-    background: '#f97316',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 12,
-    padding: '14px',
-    fontSize: 15,
-    fontWeight: 800,
-    cursor: 'pointer',
-    marginTop: 4,
-  },
-  empty: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    color: '#52525b',
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: '#3f3f46',
-    marginBottom: 8,
-  },
-  emptySub: {
-    fontSize: 14,
-    color: '#3f3f46',
-  },
-  betList: {
-    padding: '0 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  betCard: {
-    background: '#111',
-    border: '1px solid',
-    borderRadius: 14,
-    padding: '16px',
-  },
-  betTop: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 8,
-  },
-  betTeams: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-    flex: 1,
-  },
-  myTeam: {
-    fontWeight: 700,
-    fontSize: 14,
-    color: '#fff',
-  },
-  vs: {
-    fontSize: 11,
-    color: '#52525b',
-    fontWeight: 600,
-  },
-  oppTeam: {
-    fontWeight: 700,
-    fontSize: 14,
-    color: '#a1a1aa',
-  },
-  betStatus: {
-    fontSize: 12,
-    fontWeight: 800,
-    whiteSpace: 'nowrap',
-  },
-  betMeta: {
-    display: 'flex',
-    gap: 8,
-    marginBottom: 10,
-    flexWrap: 'wrap',
-  },
-  metaChip: {
-    fontSize: 11,
-    color: '#71717a',
-    background: '#1a1a1a',
-    padding: '3px 8px',
-    borderRadius: 6,
-    fontWeight: 600,
-  },
-  betStake: {
-    fontSize: 13,
-    color: '#71717a',
-    lineHeight: 1.4,
-  },
-  stakeText: {
-    color: '#f97316',
-    fontWeight: 700,
-  },
+  page:         { background: '#0a0a0a', minHeight: '100vh', color: '#fff', fontFamily: "'Inter', -apple-system, sans-serif", paddingBottom: 60 },
+  header:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 16px 8px', borderBottom: '1px solid #1f1f1f' },
+  headerTitle:  { fontSize: 17, fontWeight: 800 },
+  backBtn:      { background: 'none', border: 'none', color: '#f97316', fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: 0, width: 60 },
+  connectBanner:{ margin: '16px', padding: '14px 16px', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 12, fontSize: 14, color: '#f97316' },
+  connectLink:  { fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' },
+  errorBanner:  { margin: '16px', padding: '12px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12, fontSize: 14, color: '#ef4444' },
+  scoreboard:   { display: 'flex', justifyContent: 'space-around', padding: '20px 16px', background: '#111', margin: '16px', borderRadius: 16, border: '1px solid #1f1f1f' },
+  actionsRow:   { display: 'flex', gap: 10, padding: '0 16px 12px' },
+  newBetBtn:    { flex: 1, background: '#f97316', color: '#fff', border: 'none', borderRadius: 12, padding: '13px 20px', fontSize: 15, fontWeight: 800, cursor: 'pointer' },
+  settleBtn:    { flex: 1, background: 'transparent', color: '#f97316', border: '1.5px solid #f97316', borderRadius: 12, padding: '13px 20px', fontSize: 15, fontWeight: 800, cursor: 'pointer' },
+  settleMsg:    { margin: '0 16px 12px', padding: '10px 14px', background: 'rgba(249,115,22,0.06)', border: '1px solid #2a2a2a', borderRadius: 10, fontSize: 13, color: '#a1a1aa' },
+  form:         { margin: '0 16px 20px', padding: '20px', background: '#111', border: '1px solid #1f1f1f', borderRadius: 16, display: 'flex', flexDirection: 'column', gap: 12 },
+  formTitle:    { fontSize: 15, fontWeight: 800, marginBottom: 4 },
+  label:        { fontSize: 12, color: '#71717a', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: -4 },
+  select:       { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10, color: '#fff', padding: '12px 14px', fontSize: 14, width: '100%', appearance: 'none', cursor: 'pointer' },
+  input:        { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10, color: '#fff', padding: '12px 14px', fontSize: 14, width: '100%', boxSizing: 'border-box', outline: 'none' },
+  formError:    { color: '#ef4444', fontSize: 13, padding: '8px 12px', background: 'rgba(239,68,68,0.06)', borderRadius: 8 },
+  submitBtn:    { background: '#f97316', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 800, cursor: 'pointer', marginTop: 4 },
+  empty:        { textAlign: 'center', padding: '60px 20px' },
+  emptyTitle:   { fontSize: 18, fontWeight: 700, color: '#3f3f46', marginBottom: 8 },
+  emptySub:     { fontSize: 14, color: '#3f3f46' },
+  betList:      { padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 },
+  betCard:      { background: '#111', border: '1px solid', borderRadius: 14, padding: '16px' },
+  betTop:       { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 },
+  betTeams:     { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 },
+  myTeam:       { fontWeight: 700, fontSize: 14 },
+  vs:           { fontSize: 11, color: '#52525b', fontWeight: 600 },
+  oppTeam:      { fontWeight: 700, fontSize: 14, color: '#a1a1aa' },
+  betStatus:    { fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' },
+  betMeta:      { display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  metaChip:     { fontSize: 11, color: '#71717a', background: '#1a1a1a', padding: '3px 8px', borderRadius: 6, fontWeight: 600 },
+  betStake:     { fontSize: 13, color: '#71717a' },
+  stakeText:    { color: '#f97316', fontWeight: 700 },
+  payBadge:     { marginTop: 10, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700 },
+  confirmRow:   { display: 'flex', gap: 8, marginTop: 12 },
+  paidBtn:      { flex: 1, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 10, padding: '10px', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  deadbeatBtn:  { flex: 1, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '10px', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  deadbeatBoard:{ margin: '24px 16px 0', padding: '20px', background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16 },
+  deadbeatTitle:{ fontSize: 15, fontWeight: 800, color: '#ef4444', marginBottom: 4 },
+  deadbeatSub:  { fontSize: 12, color: '#71717a', marginBottom: 14 },
+  deadbeatRow:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(239,68,68,0.1)' },
+  deadbeatName: { fontWeight: 700, fontSize: 14 },
+  deadbeatCount:{ fontSize: 12, color: '#ef4444', fontWeight: 700 },
 };
 
 export default withAuth(TrashTalk);
