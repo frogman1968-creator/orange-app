@@ -39,8 +39,13 @@ export default function Home() {
 
         {/* Logo */}
         <div className={`anim-item anim-0 ${visible ? 'anim-in' : ''}`}>
-          <div className="logo-mark">
-            <span className="logo-mark-text">Orange</span>
+          <div className="logo-wrap">
+            <div className="logo-ring logo-ring-3" />
+            <div className="logo-ring logo-ring-2" />
+            <div className="logo-ring logo-ring-1" />
+            <div className="logo-mark">
+              <span className="logo-mark-text">Orange</span>
+            </div>
           </div>
         </div>
 
@@ -188,8 +193,50 @@ export default function Home() {
         .anim-4 { transition-delay: 460ms; }
         .anim-5 { transition-delay: 560ms; }
 
+        /* ── Logo wrap ────────────────────────── */
+        .logo-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 280px;
+          height: 280px;
+        }
+
+        /* ── Ripple rings ─────────────────────── */
+        .logo-ring {
+          position: absolute;
+          border-radius: 50%;
+          top: 50%; left: 50%;
+          transform: translate(-50%, -50%);
+        }
+        .logo-ring-1 {
+          width: 175px; height: 175px;
+          background: rgba(249,115,22,0.22);
+          animation: ring-pulse 3s ease-in-out infinite;
+          animation-delay: 0.3s;
+        }
+        .logo-ring-2 {
+          width: 220px; height: 220px;
+          background: rgba(249,115,22,0.13);
+          animation: ring-pulse 3s ease-in-out infinite;
+          animation-delay: 0.6s;
+        }
+        .logo-ring-3 {
+          width: 270px; height: 270px;
+          background: rgba(249,115,22,0.07);
+          animation: ring-pulse 3s ease-in-out infinite;
+          animation-delay: 0.9s;
+        }
+        @keyframes ring-pulse {
+          0%, 100% { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+          50%       { transform: translate(-50%, -50%) scale(1.08); opacity: 0.6; }
+        }
+
         /* ── Logo mark ────────────────────────── */
         .logo-mark {
+          position: relative;
+          z-index: 1;
           width: 130px;
           height: 130px;
           border-radius: 50%;
