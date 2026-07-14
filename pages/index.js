@@ -1,16 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabaseClient';
 
 export default function Home() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const onboarded = localStorage.getItem('orange_onboarded');
-    if (!onboarded) {
-      router.replace('/onboarding');
-    }
+    // If already logged in, skip the landing page and go straight to dashboard
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace('/dashboard');
+      } else {
+        setChecking(false);
+      }
+    });
   }, []);
 
+  if (checking) {
+    return (
+      <div style={{ background: '#0f0f0f', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 36 }}>🟠</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -43,13 +56,18 @@ export default function Home() {
         </div>
 
         <button
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push('/signup')}
           style={styles.ctaButton}
         >
-          Enter Footagio League →
+          Get Started Free →
         </button>
 
-        <p style={styles.disclaimer}>Free to try. No credit card required.</p>
+        <p style={styles.signin}>
+          Already have an account?{' '}
+          <span style={styles.signinLink} onClick={() => router.push('/login')}>Sign in</span>
+        </p>
+
+        <p style={styles.disclaimer}>14-day free trial · No credit card required</p>
       </div>
     </div>
   );
@@ -160,9 +178,7 @@ const styles = {
     letterSpacing: '-0.2px',
     width: '100%',
   },
-  disclaimer: {
-    fontSize: 13,
-    color: '#52525b',
-    margin: 0,
-  },
+  signin: { fontSize: 13, color: '#71717a', margin: 0 },
+  signinLink: { color: '#f97316', cursor: 'pointer', fontWeight: 600 },
+  disclaimer: { fontSize: 13, color: '#52525b', margin: 0 },
 };
