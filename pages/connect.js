@@ -48,7 +48,7 @@ export default function Connect() {
           <div style={styles.successCard}>
             <div style={styles.successIcon}>✅</div>
             <div style={styles.successTitle}>Yahoo connected!</div>
-            <div style={styles.successSub}>Your Footagio League is now live.</div>
+            <div style={styles.successSub}>Your Yahoo league is now live in Orange.</div>
             <button style={styles.primaryBtn} onClick={() => router.push('/dashboard')}>
               Go to Dashboard
             </button>

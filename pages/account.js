@@ -43,7 +43,7 @@ function Account() {
         <div style={styles.avatar}>🟠</div>
         <div style={styles.profileInfo}>
           <div style={styles.profileName}>{user?.email || '—'}</div>
-          <div style={styles.profileLeague}>Footagio League</div>
+          <div style={styles.profileLeague}>Fantasy Football</div>
         </div>
       </div>
 
@@ -95,12 +95,12 @@ function Account() {
         <div style={styles.sectionTitle}>Your Plan Includes</div>
         <div style={styles.featureList}>
           {[
-            { icon: '🎯', label: 'Draft survival odds', locked: !isPremium },
-            { icon: '🟠', label: 'Orange Suggests picks', locked: !isPremium },
-            { icon: '📊', label: 'More Info — expert consensus + Vegas data', locked: !isPremium },
-            { icon: '⛔', label: 'Bye week alerts', locked: false },
-            { icon: '📋', label: 'Roster & matchup view', locked: false },
-            { icon: '📅', label: 'Multi-week lineup preview', locked: false },
+            { icon: '🤖', label: 'AI Start/Sit Engine', locked: !isPremium },
+            { icon: '🎯', label: 'AI Draft Autopilot', locked: !isPremium },
+            { icon: '🔄', label: 'Waiver Wire Ranker + AI Picks', locked: !isPremium },
+            { icon: '🔥', label: 'Trash Talk Table + Deadbeat Board', locked: !isPremium },
+            { icon: '📋', label: 'Live roster & matchup view', locked: false },
+            { icon: '📊', label: 'League standings', locked: false },
           ].map((f, i) => (
             <div key={i} style={styles.featureRow}>
               <span style={styles.featureIcon}>{f.icon}</span>
@@ -121,7 +121,7 @@ function Account() {
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>League</span>
-            <span style={styles.infoValue}>Footagio League</span>
+            <span style={styles.infoValue}>Yahoo Fantasy</span>
           </div>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>Data source</span>
@@ -164,6 +164,8 @@ function Account() {
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
         <button style={styles.navBtn} onClick={() => router.push('/lineup')}>📊 Lineup</button>
         <button style={styles.navBtn} onClick={() => router.push('/dashboard')}>🏠 Home</button>
+        <button style={styles.navBtn} onClick={() => router.push('/waiver')}>🔄 Wire</button>
+        <button style={styles.navBtn} onClick={() => router.push('/trash')}>🔥 Trash</button>
         <button style={{ ...styles.navBtn, ...styles.navBtnActive }}>👤 Account</button>
       </div>
     </div>

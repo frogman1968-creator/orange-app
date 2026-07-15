@@ -70,9 +70,9 @@ export default function Pricing() {
           <div style={styles.planCardFeatured}>
             <div style={styles.bestValueBadge}>BEST VALUE</div>
             <div style={styles.planName}>Season Pass</div>
-            <div style={styles.planPrice}>$24.99</div>
-            <div style={styles.planPeriod}>one-time · draft through playoffs</div>
-            <div style={styles.planPerWeek}>Less than $1/week</div>
+            <div style={styles.planPrice}>$29.99</div>
+            <div style={styles.planPeriod}>one-time · August through February</div>
+            <div style={styles.planPerWeek}>Less than $1/week all season long</div>
             <button
               style={styles.planBtnFeatured}
               onClick={() => handleCheckout('season')}
@@ -82,10 +82,24 @@ export default function Pricing() {
             </button>
           </div>
 
+          {/* Annual */}
+          <div style={styles.planCard}>
+            <div style={styles.planName}>Annual</div>
+            <div style={styles.planPrice}>$44.99</div>
+            <div style={styles.planPeriod}>per year · ~$3.75/month · cancel anytime</div>
+            <button
+              style={styles.planBtn}
+              onClick={() => handleCheckout('annual')}
+              disabled={loading === 'annual'}
+            >
+              {loading === 'annual' ? 'Loading...' : 'Start Annual →'}
+            </button>
+          </div>
+
           {/* Monthly */}
           <div style={styles.planCard}>
             <div style={styles.planName}>Monthly</div>
-            <div style={styles.planPrice}>$4.99</div>
+            <div style={styles.planPrice}>$7.99</div>
             <div style={styles.planPeriod}>per month · cancel anytime</div>
             <button
               style={styles.planBtn}
@@ -112,13 +126,13 @@ export default function Pricing() {
 }
 
 const FEATURES = [
-  'Roster-aware draft with survival odds',
-  'Opponent-aware start/sit recommendations',
-  'Expert consensus + Vegas game totals',
-  'Multi-week lineup previews',
-  'Bye week alerts — never get caught again',
-  'Orange Suggests — real-time draft pattern tips',
-  'Matchup grades A–F for every player',
+  'AI Start/Sit Engine — roster & matchup-aware picks',
+  'AI Draft Autopilot — real-time picks on your turn',
+  'Waiver Wire Ranker — scored and sorted by need',
+  'AI Waiver Picks — 3 sharp recommendations every week',
+  'Trash Talk Table — side bets with auto-settle',
+  'League Deadbeat Board — public payment reputation',
+  'Live Yahoo sync — roster, matchup, standings',
   'No ads. No lag. No garbage.',
 ];
 
