@@ -178,6 +178,19 @@ function Dashboard() {
         <div style={styles.breakdownIcon}>📋</div>
       </div>
 
+      {/* Draft Report Card */}
+      <div
+        style={styles.draftGradeCard}
+        onClick={() => router.push('/draft-grades')}
+      >
+        <div style={styles.breakdownLeft}>
+          <div style={styles.draftGradeLabel}>DRAFT REPORT CARD</div>
+          <div style={styles.breakdownTitle}>How Does Your Team Stack Up? →</div>
+          <div style={styles.breakdownSub}>Your squad graded against every team in your league. No ADP. Just results.</div>
+        </div>
+        <div style={styles.draftGradeIcon}>🏆</div>
+      </div>
+
       {/* Bottom Nav */}
       <div style={styles.bottomNav}>
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
@@ -649,6 +662,22 @@ const styles = {
   breakdownTitle: { fontSize: 16, fontWeight: 800, marginBottom: 4 },
   breakdownSub: { fontSize: 12, color: '#52525b', lineHeight: 1.5 },
   breakdownIcon: { fontSize: 28, marginLeft: 12 },
+  draftGradeCard: {
+    margin: '10px 16px 0',
+    background: '#0d1a0d',
+    border: '1px solid #22c55e33',
+    borderRadius: 14,
+    padding: '14px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+  },
+  draftGradeLabel: {
+    fontSize: 10, fontWeight: 800, color: '#22c55e',
+    textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4,
+  },
+  draftGradeIcon: { fontSize: 28, marginLeft: 12 },
   bottomNav: {
     position: 'fixed',
     bottom: 0,
