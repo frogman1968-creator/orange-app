@@ -49,11 +49,12 @@ export default async function handler(req, res) {
       const ONE_DAY = 24 * 60 * 60 * 1000;
       if (age < ONE_DAY) {
         return res.json({
-          scoringFormat:  cached.scoring_format,
-          receptionPts:   cached.reception_pts,
-          passTdPts:      cached.pass_td_pts,
-          starterSlots:   cached.starter_slots,
-          scoringSummary: cached.scoring_summary,
+          scoringFormat:   cached.scoring_format,
+          receptionPts:    cached.reception_pts,
+          passTdPts:       cached.pass_td_pts,
+          starterSlots:    cached.starter_slots,
+          scoringSummary:  cached.scoring_summary,
+          rosterPositions: cached.roster_positions || [],
           cached: true,
         });
       }
@@ -69,23 +70,25 @@ export default async function handler(req, res) {
 
     // Upsert into Supabase
     await supabase.from('league_settings').upsert({
-      user_id:         user.id,
+      user_id:          user.id,
       league_key,
-      scoring_format:  settings.scoringFormat,
-      reception_pts:   settings.receptionPts,
-      pass_td_pts:     settings.passTdPts,
-      starter_slots:   settings.starterSlots,
-      scoring_summary: settings.scoringSummary,
-      raw_settings:    settings.statModifiers,
-      updated_at:      new Date().toISOString(),
+      scoring_format:   settings.scoringFormat,
+      reception_pts:    settings.receptionPts,
+      pass_td_pts:      settings.passTdPts,
+      starter_slots:    settings.starterSlots,
+      scoring_summary:  settings.scoringSummary,
+      roster_positions: settings.rosterPositions,
+      raw_settings:     settings.statModifiers,
+      updated_at:       new Date().toISOString(),
     }, { onConflict: 'user_id,league_key' });
 
     return res.json({
-      scoringFormat:  settings.scoringFormat,
-      receptionPts:   settings.receptionPts,
-      passTdPts:      settings.passTdPts,
-      starterSlots:   settings.starterSlots,
-      scoringSummary: settings.scoringSummary,
+      scoringFormat:   settings.scoringFormat,
+      receptionPts:    settings.receptionPts,
+      passTdPts:       settings.passTdPts,
+      starterSlots:    settings.starterSlots,
+      scoringSummary:  settings.scoringSummary,
+      rosterPositions: settings.rosterPositions,
       cached: false,
     });
   } catch (err) {

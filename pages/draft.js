@@ -1,8 +1,40 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { DRAFT_POOL, ROSTER_REQUIREMENTS } from '../lib/sampleData';
+import { DRAFT_POOL } from '../lib/sampleData';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
+
+// Default requirements used until real league settings load
+const DEFAULT_REQUIREMENTS = { QB: 2, RB: 4, WR: 4, TE: 2, K: 1, DEF: 1 };
+
+/** Convert Yahoo rosterPositions array to a { QB: N, RB: N, ... } requirements map */
+function buildRequirements(rosterPositions) {
+  if (!rosterPositions?.length) return DEFAULT_REQUIREMENTS;
+  const reqs = {};
+  for (const slot of rosterPositions) {
+    if (['BN', 'IR'].includes(slot.position)) continue;
+    const isFlex = slot.position.includes('/');
+    if (!isFlex) {
+      reqs[slot.position] = (reqs[slot.position] || 0) + slot.count;
+    }
+    // FLEX slots: distribute across eligible positions for urgency math
+    // Each flex slot adds 1 to the most-needed eligible position's urgency
+    // This is handled implicitly by calcUrgency using total needs
+  }
+  return Object.keys(reqs).length ? reqs : DEFAULT_REQUIREMENTS;
+}
+
+/** Build human-readable roster structure string for AI */
+function buildRosterStructureText(rosterPositions) {
+  if (!rosterPositions?.length) return null;
+  return rosterPositions
+    .filter(rp => rp.position !== 'BN' && rp.position !== 'IR')
+    .map(rp => {
+      const label = rp.position.includes('/') ? `${rp.position} FLEX` : rp.position;
+      return rp.count > 1 ? `${rp.count}x ${label}` : `1x ${label}`;
+    })
+    .join(', ');
+}
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 const POS_DEMAND = { QB: 0.08, RB: 0.30, WR: 0.32, TE: 0.10, K: 0.05, DEF: 0.05 };
@@ -31,19 +63,21 @@ function countPositions(roster) {
   return counts;
 }
 
-function calcUrgency(counts, round, totalRounds) {
+function calcUrgency(counts, round, totalRounds, requirements) {
+  const reqs = requirements || DEFAULT_REQUIREMENTS;
   const roundsLeft = totalRounds - round + 1;
   const urgency = {};
-  Object.entries(ROSTER_REQUIREMENTS).forEach(([pos, needed]) => {
-    const remaining = Math.max(0, needed - counts[pos]);
+  Object.entries(reqs).forEach(([pos, needed]) => {
+    const remaining = Math.max(0, needed - (counts[pos] || 0));
     urgency[pos] = remaining === 0 ? 0 : Math.min(1, remaining / Math.max(1, roundsLeft * 0.4));
   });
   return urgency;
 }
 
-function missingPositions(counts) {
-  return Object.entries(ROSTER_REQUIREMENTS)
-    .filter(([pos]) => counts[pos] === 0)
+function missingPositions(counts, requirements) {
+  const reqs = requirements || DEFAULT_REQUIREMENTS;
+  return Object.entries(reqs)
+    .filter(([pos]) => (counts[pos] || 0) === 0)
     .map(([pos]) => pos);
 }
 
@@ -77,29 +111,25 @@ function survivalLabel(prob) {
 
 // ─── Pattern Suggestion ───────────────────────────────────────────────────────
 
-function getPatternSuggestion(roster, available, counts) {
+function getPatternSuggestion(roster, available, counts, requirements) {
+  const reqs = requirements || DEFAULT_REQUIREMENTS;
   if (roster.length < 2) return null;
   const recent = roster.slice(-2).map(p => p.position);
   if (recent[0] !== recent[1]) return null;
   const heavyPos = recent[0];
-  const suggestMap = {
-    RB:  counts.WR < 2 ? 'WR' : counts.TE < 1 ? 'TE' : 'WR',
-    WR:  counts.RB < 2 ? 'RB' : counts.TE < 1 ? 'TE' : 'RB',
-    QB:  counts.RB < 2 ? 'RB' : 'WR',
-    TE:  counts.WR < 2 ? 'WR' : 'RB',
-    K:   'DEF',
-    DEF: 'K',
-  };
-  const suggestPos = suggestMap[heavyPos];
-  if (!suggestPos) return null;
-  const needed = ROSTER_REQUIREMENTS[suggestPos] || 1;
-  if ((counts[suggestPos] || 0) >= needed) return null;
+  // Find most urgent unfilled position that differs from the heavy position
+  const urgentPos = Object.entries(reqs)
+    .filter(([pos]) => pos !== heavyPos && (counts[pos] || 0) < (reqs[pos] || 1))
+    .sort(([, aN], [, bN]) => bN - aN)[0]?.[0];
+  if (!urgentPos) return null;
+  const needed = reqs[urgentPos] || 1;
+  if ((counts[urgentPos] || 0) >= needed) return null;
   const top3 = available
-    .filter(p => p.position === suggestPos)
+    .filter(p => p.position === urgentPos)
     .sort((a, b) => b.projectedPts - a.projectedPts)
     .slice(0, 3);
   if (top3.length === 0) return null;
-  return { heavyPos, suggestPos, players: top3 };
+  return { heavyPos, suggestPos: urgentPos, players: top3 };
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -129,11 +159,51 @@ function DraftCompanion() {
   const [aiRec, setAiRec] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
-  const [aiPickUsed, setAiPickUsed] = useState(null); // track which pick AI rec was for
+  const [aiPickUsed, setAiPickUsed] = useState(null);
+
+  // League settings (loaded from Yahoo via Supabase cache)
+  const [leagueKey, setLeagueKey]               = useState(null);
+  const [rosterRequirements, setRosterRequirements] = useState(DEFAULT_REQUIREMENTS);
+  const [rosterPositions, setRosterPositions]   = useState(null);
 
   const { isPremium } = useTrial();
 
   useEffect(() => setMounted(true), []);
+
+  // Fetch league settings after mount to get real roster requirements
+  useEffect(() => {
+    async function loadLeagueSettings() {
+      try {
+        const { supabase } = await import('../lib/supabaseClient');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const auth = { Authorization: `Bearer ${session.access_token}` };
+
+        const teamsRes = await fetch('/api/yahoo/myteams', { headers: auth });
+        if (!teamsRes.ok) return;
+        const { teams } = await teamsRes.json();
+        if (!teams?.length) return;
+
+        const lk = teams[0].leagueKey;
+        setLeagueKey(lk);
+
+        const settingsRes = await fetch(
+          `/api/yahoo/settings?league_key=${encodeURIComponent(lk)}`,
+          { headers: auth }
+        );
+        if (!settingsRes.ok) return;
+        const settings = await settingsRes.json();
+
+        if (settings.rosterPositions?.length) {
+          setRosterPositions(settings.rosterPositions);
+          setRosterRequirements(buildRequirements(settings.rosterPositions));
+        }
+      } catch {
+        // Non-fatal — falls back to DEFAULT_REQUIREMENTS
+      }
+    }
+    loadLeagueSettings();
+  }, []);
   if (!mounted) return <PageSkeleton />;
 
   const myPickSlots = useMemo(
@@ -147,9 +217,9 @@ function DraftCompanion() {
   const draftDone = currentOverallPick > numTeams * totalRounds;
 
   const counts = useMemo(() => countPositions(myRoster), [myRoster]);
-  const urgency = useMemo(() => calcUrgency(counts, currentRound, totalRounds), [counts, currentRound, totalRounds]);
-  const missing = useMemo(() => missingPositions(counts), [counts]);
-  const suggestion = useMemo(() => getPatternSuggestion(myRoster, available, counts), [myRoster, available, counts]);
+  const urgency = useMemo(() => calcUrgency(counts, currentRound, totalRounds, rosterRequirements), [counts, currentRound, totalRounds, rosterRequirements]);
+  const missing = useMemo(() => missingPositions(counts, rosterRequirements), [counts, rosterRequirements]);
+  const suggestion = useMemo(() => getPatternSuggestion(myRoster, available, counts, rosterRequirements), [myRoster, available, counts, rosterRequirements]);
 
   function draftPlayer(player) {
     setMyRoster(prev => [...prev, { ...player, draftedRound: currentRound, draftedPick: currentOverallPick }]);
@@ -195,6 +265,7 @@ function DraftCompanion() {
           pick: currentOverallPick,
           draftPosition,
           numTeams,
+          leagueKey,
         }),
       });
       const data = await res.json();

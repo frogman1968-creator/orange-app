@@ -11,15 +11,26 @@ import { createClient } from '@supabase/supabase-js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-async function getLeagueSummary(supabase, userId, leagueKey) {
+async function getLeagueContext(supabase, userId, leagueKey) {
   if (!leagueKey) return null;
   const { data } = await supabase
     .from('league_settings')
-    .select('scoring_summary, scoring_format')
+    .select('scoring_summary, scoring_format, roster_positions')
     .eq('user_id', userId)
     .eq('league_key', leagueKey)
     .single();
   return data || null;
+}
+
+function buildFlexContext(rosterPositions) {
+  if (!rosterPositions?.length) return null;
+  const flexSlots = rosterPositions.filter(rp =>
+    rp.position !== 'BN' && rp.position !== 'IR' && rp.position.includes('/')
+  );
+  if (!flexSlots.length) return null;
+  return flexSlots.map(rp =>
+    `${rp.count}x FLEX slot accepts: ${rp.position.split('/').join(', ')}`
+  ).join('. ');
 }
 
 export default async function handler(req, res) {
@@ -44,13 +55,15 @@ export default async function handler(req, res) {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-  const leagueSettings = await getLeagueSummary(serviceClient, user.id, leagueKey);
+  const leagueCtx = await getLeagueContext(serviceClient, user.id, leagueKey);
 
-  const scoringContext = leagueSettings?.scoring_summary
-    ? `\nLeague: ${leagueSettings.scoring_summary}`
+  const scoringContext = leagueCtx?.scoring_summary
+    ? `\nLeague: ${leagueCtx.scoring_summary}`
     : '';
+  const flexContext = buildFlexContext(leagueCtx?.roster_positions);
+  const flexNote = flexContext ? `\nFlex slots: ${flexContext}` : '';
 
-  const scoringLabel = leagueSettings?.scoring_format || 'Head-to-Head';
+  const scoringLabel = leagueCtx?.scoring_format || 'Head-to-Head';
 
   const rosterText = roster.map(p => {
     const statusNote = p.injuryNote
@@ -63,7 +76,7 @@ export default async function handler(req, res) {
     ? `This week they face ${matchup.opponent?.name || 'unknown opponent'}.`
     : 'No matchup data available.';
 
-  const prompt = `You are an expert fantasy football analyst. A manager needs start/sit advice for their ${scoringLabel} league.${scoringContext}
+  const prompt = `You are an expert fantasy football analyst. A manager needs start/sit advice for their ${scoringLabel} league.${scoringContext}${flexNote}
 
 Their roster:
 ${rosterText}

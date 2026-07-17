@@ -11,15 +11,35 @@ import { createClient } from '@supabase/supabase-js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-async function getLeagueSummary(supabase, userId, leagueKey) {
+async function getLeagueContext(supabase, userId, leagueKey) {
   if (!leagueKey) return null;
   const { data } = await supabase
     .from('league_settings')
-    .select('scoring_summary')
+    .select('scoring_summary, roster_positions')
     .eq('user_id', userId)
     .eq('league_key', leagueKey)
     .single();
-  return data?.scoring_summary || null;
+  return data || null;
+}
+
+function buildRosterNeeds(rosterPositions, currentRoster) {
+  if (!rosterPositions?.length) return null;
+  const drafted = {};
+  for (const p of currentRoster) drafted[p.position] = (drafted[p.position] || 0) + 1;
+
+  const needs = [];
+  for (const slot of rosterPositions) {
+    if (['BN', 'IR'].includes(slot.position)) continue;
+    const isFlex = slot.position.includes('/');
+    if (!isFlex) {
+      const have = drafted[slot.position] || 0;
+      const need = Math.max(0, slot.count - have);
+      if (need > 0) needs.push(`${slot.position}: ${need} starter slot(s) unfilled`);
+    } else {
+      needs.push(`${slot.count}x FLEX slot (${slot.position} eligible)`);
+    }
+  }
+  return needs.join(', ') || 'Roster fully stacked at all positions';
 }
 
 export default async function handler(req, res) {
@@ -39,14 +59,18 @@ export default async function handler(req, res) {
   const { players = [], roster = [], leagueKey } = req.body;
   if (!players.length) return res.status(400).json({ error: 'No players provided' });
 
-  // Pull cached league settings for scoring context
+  // Pull cached league settings
   const serviceClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-  const scoringSummary = await getLeagueSummary(serviceClient, user.id, leagueKey);
-  const scoringContext = scoringSummary
-    ? `\nLeague scoring: ${scoringSummary}`
+  const leagueCtx = await getLeagueContext(serviceClient, user.id, leagueKey);
+  const scoringContext = leagueCtx?.scoring_summary
+    ? `\nLeague scoring: ${leagueCtx.scoring_summary}`
+    : '';
+  const rosterNeedsText = buildRosterNeeds(leagueCtx?.roster_positions, roster);
+  const needsContext = rosterNeedsText
+    ? `\nRoster needs: ${rosterNeedsText}`
     : '';
 
   const rosterText = roster.length
@@ -60,7 +84,7 @@ export default async function handler(req, res) {
     ` | Orange Score: ${p.score}`
   ).join('\n');
 
-  const prompt = `You are an expert fantasy football analyst. A manager needs waiver wire advice for this week.${scoringContext}
+  const prompt = `You are an expert fantasy football analyst. A manager needs waiver wire advice for this week.${scoringContext}${needsContext}
 
 Their current roster:
 ${rosterText}
