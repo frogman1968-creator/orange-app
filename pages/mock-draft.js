@@ -255,6 +255,16 @@ function MockDraftPage() {
     return () => clearTimeout(botTimerRef.current);
   }, [phase, currentPick, config, botStyles, rosterPositions]);
 
+  // Auto-fire AI rec when it becomes the user's turn
+  useEffect(() => {
+    if (phase !== 'drafting' || !config || !mounted) return;
+    const teamPos = getTeamForPick(currentPick, config.numTeams);
+    if (teamPos === config.myPosition) {
+      getAiRec();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPick, phase, config]);
+
   // Auto-scroll board
   useEffect(() => {
     if (boardRef.current) {
@@ -322,7 +332,7 @@ function MockDraftPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAiRec(data.recommendation || data.pick || data.analysis || null);
+        setAiRec(data); // full { pick, reason, insight } object
       }
     } catch {}
     finally { setAiLoading(false); }
@@ -384,29 +394,47 @@ function MockDraftPage() {
       {/* Your pick — AI rec */}
       {isMyPick && (
         <div style={S.myPickBanner}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#ff6b1a', marginBottom: 8 }}>
-            You're on the clock! Round {round}, Pick {currentPick}
+          {/* On the clock header */}
+          <div style={S.onClockHeader}>
+            <div style={S.onClockPulse} />
+            <span style={S.onClockText}>YOU'RE ON THE CLOCK</span>
+            <span style={S.onClockRound}>R{round} · Pick {currentPick}</span>
           </div>
-          <button style={S.aiRecBtn} onClick={getAiRec} disabled={aiLoading}>
-            {aiLoading ? '...' : '🟠 Get AI Recommendation'}
-          </button>
-          {aiRec && (
-            <div style={S.aiRecBox}>
-              <div style={S.aiRecLabel}>Orange says:</div>
-              {typeof aiRec === 'object' && aiRec.pick ? (
-                <>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-                    <PosBadge pos={aiRec.pick.position} size="md" />{' '}
-                    {aiRec.pick.name} ({aiRec.pick.team})
-                  </div>
-                  {aiRec.reason && <div style={S.aiRecText}>{aiRec.reason}</div>}
-                  {aiRec.insight && <div style={{ ...S.aiRecText, color: '#666', marginTop: 4, fontStyle: 'italic' }}>{aiRec.insight}</div>}
-                </>
-              ) : (
-                <div style={S.aiRecText}>{typeof aiRec === 'string' ? aiRec : JSON.stringify(aiRec)}</div>
-              )}
+
+          {/* AI Rec card */}
+          <div style={S.aiRecCard}>
+            <div style={S.aiRecCardHeader}>
+              <span style={S.aiRecLabelOrange}>🟠 Orange recommends</span>
+              <button style={S.refreshBtn} onClick={getAiRec} disabled={aiLoading}>
+                {aiLoading ? '...' : '↺ Refresh'}
+              </button>
             </div>
-          )}
+
+            {aiLoading && (
+              <div style={S.aiLoadingRow}>
+                <div style={S.aiSpinner} />
+                <span style={{ fontSize: 13, color: '#666' }}>Analyzing your roster...</span>
+              </div>
+            )}
+
+            {!aiLoading && aiRec?.pick && (
+              <>
+                <div style={S.aiPickRow}>
+                  <PosBadge pos={aiRec.pick.position} size="md" />
+                  <div style={{ flex: 1 }}>
+                    <div style={S.aiPickName}>{aiRec.pick.name}</div>
+                    <div style={S.aiPickTeam}>{aiRec.pick.team}</div>
+                  </div>
+                </div>
+                {aiRec.reason && <div style={S.aiReasonText}>{aiRec.reason}</div>}
+                {aiRec.insight && <div style={S.aiInsightText}>💡 {aiRec.insight}</div>}
+              </>
+            )}
+
+            {!aiLoading && !aiRec && (
+              <div style={{ fontSize: 13, color: '#555' }}>Fetching recommendation...</div>
+            )}
+          </div>
         </div>
       )}
 
@@ -577,18 +605,40 @@ const S = {
     animation: 'pulse 1s ease',
   },
   myPickBanner: {
-    padding: '12px 16px', background: '#1a0a00', borderBottom: '1px solid #ff6b1a33',
+    background: '#1a0800', borderBottom: '2px solid #ff6b1a55',
   },
-  aiRecBtn: {
-    background: '#ff6b1a', color: '#fff', border: 'none', borderRadius: 10,
-    padding: '10px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-    marginBottom: 8,
+  onClockHeader: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '10px 16px', background: '#ff6b1a',
   },
-  aiRecBox: {
-    background: '#0d0d1a', border: '1px solid #2a2a4a', borderRadius: 10,
-    padding: '10px 12px', marginTop: 8,
+  onClockPulse: {
+    width: 8, height: 8, borderRadius: '50%', background: '#fff',
+    animation: 'pulse 1s ease infinite', flexShrink: 0,
   },
-  aiRecLabel: { fontSize: 10, color: '#ff6b1a', fontWeight: 700, letterSpacing: 1, marginBottom: 4 },
+  onClockText: { fontSize: 12, fontWeight: 900, color: '#000', letterSpacing: 1.5, flex: 1 },
+  onClockRound: { fontSize: 11, fontWeight: 700, color: '#0005' },
+
+  aiRecCard: {
+    padding: '12px 16px',
+  },
+  aiRecCardHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+  },
+  aiRecLabelOrange: { fontSize: 12, fontWeight: 800, color: '#ff6b1a' },
+  refreshBtn: {
+    background: 'none', border: '1px solid #333', borderRadius: 6,
+    color: '#666', fontSize: 11, padding: '3px 8px', cursor: 'pointer',
+  },
+  aiLoadingRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' },
+  aiSpinner: {
+    width: 14, height: 14, border: '2px solid #333', borderTopColor: '#ff6b1a',
+    borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+  },
+  aiPickRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
+  aiPickName: { fontSize: 16, fontWeight: 900, color: '#fff' },
+  aiPickTeam: { fontSize: 11, color: '#666', marginTop: 1 },
+  aiReasonText: { fontSize: 13, color: '#ccc', lineHeight: 1.5, marginBottom: 6 },
+  aiInsightText: { fontSize: 12, color: '#555', fontStyle: 'italic', lineHeight: 1.4 },
   aiRecText: { fontSize: 13, color: '#ccc', lineHeight: 1.5 },
 
   poolSection: { padding: '0' },
