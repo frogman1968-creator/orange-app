@@ -317,6 +317,15 @@ function MockDraftPage() {
       const scoringLabel = config.scoring === 'ppr' ? 'Full PPR' :
                            config.scoring === 'half' ? 'Half PPR' : 'Standard';
 
+      // Summarize what other teams have drafted by position
+      const leagueDraftCounts = {};
+      for (const entry of board) {
+        if (!entry.isMe) {
+          const pos = entry.player.position;
+          leagueDraftCounts[pos] = (leagueDraftCounts[pos] || 0) + 1;
+        }
+      }
+
       const res = await fetch('/api/ai/draft', {
         method: 'POST',
         headers: { ...auth, 'Content-Type': 'application/json' },
@@ -328,6 +337,7 @@ function MockDraftPage() {
           draftPosition: config.myPosition,
           numTeams: config.numTeams,
           leagueKey: selected?.leagueKey,
+          leagueDraftCounts, // e.g. { QB: 3, RB: 8, WR: 9, TE: 2 }
         }),
       });
       if (res.ok) {

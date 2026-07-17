@@ -80,6 +80,7 @@ export default async function handler(req, res) {
   const {
     roster = [], available = [], round = 1, pick = 1,
     draftPosition = 1, numTeams = 10, leagueKey,
+    leagueDraftCounts = null, // { QB: 3, RB: 8, WR: 9, TE: 2, ... }
   } = req.body;
 
   // Pull roster positions from Supabase cache
@@ -112,14 +113,28 @@ export default async function handler(req, res) {
     `${i + 1}. ${p.name} (${p.position}, ${p.team}) — ADP ${p.adp?.toFixed(1)}, Proj ${p.projectedPts?.toFixed(1)} pts, Bye Wk ${p.bye}`
   ).join('\n');
 
+  // Build league draft context (positional run awareness)
+  let leagueDraftSection = '';
+  if (leagueDraftCounts && Object.keys(leagueDraftCounts).length) {
+    const totalDrafted = Object.values(leagueDraftCounts).reduce((a, b) => a + b, 0);
+    const byPos = Object.entries(leagueDraftCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([pos, n]) => `${pos}: ${n} taken`)
+      .join(', ');
+    leagueDraftSection = `
+League-wide draft activity (OTHER teams, ${totalDrafted} picks so far): ${byPos}
+Use this to assess positional runs and scarcity. If few QBs have been taken, the user can wait. If RBs are flying off the board, urgency is higher.
+`;
+  }
+
   const leagueStructureSection = rosterCtx
     ? `
 League roster structure: ${rosterCtx.structureText}${scoringSummary ? `\nScoring: ${scoringSummary}` : ''}
 
 Positional gaps still to fill:
 ${rosterCtx.gapsText}
-`
-    : scoringSummary ? `\nLeague scoring: ${scoringSummary}\n` : '';
+${leagueDraftSection}`
+    : (scoringSummary ? `\nLeague scoring: ${scoringSummary}\n` : '') + leagueDraftSection;
 
   const prompt = `You are an expert fantasy football draft analyst. Give a single, confident pick recommendation.
 
