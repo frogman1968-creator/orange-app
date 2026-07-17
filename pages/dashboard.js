@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import { withAuth } from '../lib/withAuth';
 import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
+import { useLeague } from '../lib/LeagueContext';
+import LeaguePicker from '../components/LeaguePicker';
 import PaywallModal from '../components/PaywallModal';
 
 function Dashboard() {
@@ -11,38 +13,34 @@ function Dashboard() {
   const { status, daysLeft, isExpired } = useTrial();
   const [paywallDismissed, setPaywallDismissed] = useState(false);
 
+  // Multi-league context
+  const { leagues, selected, setSelected, loading: leagueLoading, notConnected } = useLeague();
+
   // Live data state
   const [liveData, setLiveData]     = useState(null);
-  const [myTeamInfo, setMyTeamInfo] = useState(null);
   const [dataLoading, setDataLoading] = useState(true);
-  const [needsConnect, setNeedsConnect] = useState(false);
   const [dataError, setDataError]   = useState(null);
 
   useEffect(() => {
+    // Wait until league context is ready
+    if (leagueLoading) return;
+    if (!selected) { setDataLoading(false); return; }
+
     async function loadLiveData() {
+      setDataLoading(true);
+      setLiveData(null);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         const authHeader = { Authorization: `Bearer ${session.access_token}` };
 
-        // Step 1: get user's teams to find league_key + team_key
-        const teamsRes = await fetch('/api/yahoo/myteams', { headers: authHeader });
-        if (teamsRes.status === 404) { setNeedsConnect(true); setDataLoading(false); return; }
-        if (!teamsRes.ok) { setDataError('Could not load Yahoo data.'); setDataLoading(false); return; }
+        const { leagueKey, teamKey } = selected;
 
-        const { teams } = await teamsRes.json();
-        if (!teams || teams.length === 0) { setNeedsConnect(true); setDataLoading(false); return; }
-
-        // Use the first team (most users have one NFL league)
-        const { leagueKey, teamKey, name: teamName } = teams[0];
-        setMyTeamInfo({ leagueKey, teamKey, name: teamName });
-
-        // Step 2: fetch full dashboard data
         const dashRes = await fetch(
           `/api/yahoo/dashboard?league_key=${encodeURIComponent(leagueKey)}&team_key=${encodeURIComponent(teamKey)}`,
           { headers: authHeader }
         );
-        if (!dashRes.ok) { setDataError('Could not load league data.'); setDataLoading(false); return; }
+        if (!dashRes.ok) { setDataError('Could not load league data.'); return; }
 
         const data = await dashRes.json();
         setLiveData(data);
@@ -54,12 +52,12 @@ function Dashboard() {
       }
     }
     loadLiveData();
-  }, []);
+  }, [leagueLoading, selected?.leagueKey]); // re-runs on league switch
 
-  if (status === 'loading' || dataLoading) return <DashboardSkeleton />;
+  if (status === 'loading' || leagueLoading || dataLoading) return <DashboardSkeleton />;
 
   // Find my team in standings
-  const myTeamKey = myTeamInfo?.teamKey;
+  const myTeamKey = selected?.teamKey;
   const myTeam    = liveData?.teams?.find(t => t.teamKey === myTeamKey) || liveData?.teams?.[0];
   const league    = liveData?.league;
   const matchup   = liveData?.matchup;
@@ -86,7 +84,7 @@ function Dashboard() {
       )}
 
       {/* Connect / Error Banner */}
-      {needsConnect && (
+      {notConnected && (
         <div style={{ ...styles.banner, borderColor: '#f97316', color: '#f97316' }}>
           🔗 Connect your Yahoo account to see live data —{' '}
           <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => router.push('/connect')}>
@@ -116,13 +114,15 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* League Header */}
-      {league && (
-        <div style={styles.leagueHeader}>
-          <div style={styles.leagueName}>{league.name || 'My League'}</div>
-          <div style={styles.leagueMeta}>{league.num_teams} teams · {league.scoring_type?.toUpperCase()} · Yahoo</div>
+      {/* League Header with multi-league picker */}
+      <div style={styles.leagueHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <LeaguePicker leagues={leagues} selected={selected} onSelect={setSelected} />
         </div>
-      )}
+        {league && (
+          <div style={styles.leagueMeta}>{league.num_teams} teams · {league.scoring_type?.toUpperCase()} · Yahoo</div>
+        )}
+      </div>
 
       {/* My Team Summary Card */}
       {myTeam && (
@@ -189,6 +189,19 @@ function Dashboard() {
           <div style={styles.breakdownSub}>Your squad graded against every team in your league. No ADP. Just results.</div>
         </div>
         <div style={styles.draftGradeIcon}>🏆</div>
+      </div>
+
+      {/* Mock Draft Simulator */}
+      <div
+        style={styles.mockDraftCard}
+        onClick={() => router.push('/mock-draft')}
+      >
+        <div style={styles.breakdownLeft}>
+          <div style={styles.mockDraftLabel}>MOCK DRAFT SIMULATOR</div>
+          <div style={styles.breakdownTitle}>Practice Before Draft Day →</div>
+          <div style={styles.breakdownSub}>12-team snake draft with AI opponents. Orange advises every pick you make.</div>
+        </div>
+        <div style={styles.draftGradeIcon}>🎯</div>
       </div>
 
       {/* Bottom Nav */}
@@ -678,6 +691,21 @@ const styles = {
     textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4,
   },
   draftGradeIcon: { fontSize: 28, marginLeft: 12 },
+  mockDraftCard: {
+    margin: '10px 16px 0',
+    background: '#0d0d1a',
+    border: '1px solid #6366f133',
+    borderRadius: 14,
+    padding: '14px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+  },
+  mockDraftLabel: {
+    fontSize: 10, fontWeight: 800, color: '#818cf8',
+    textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4,
+  },
   bottomNav: {
     position: 'fixed',
     bottom: 0,
