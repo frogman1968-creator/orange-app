@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
 import { supabase } from '../lib/supabaseClient';
+import { useLeague } from '../lib/LeagueContext';
 import {
   MY_ROSTER,
   SCHEDULE,
@@ -28,11 +29,16 @@ function LineupOptimizer() {
   const [needsConnect, setNeedsConnect] = useState(false);
 
   const { isPremium } = useTrial();
+  const { selected, loading: leagueLoading, notConnected } = useLeague();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Fetch live roster + AI analysis on mount
+  // Fetch live roster + AI analysis on mount / league switch
   useEffect(() => {
+    if (!mounted || leagueLoading) return;
+    if (notConnected) { setNeedsConnect(true); return; }
+    if (!selected) return;
+
     async function fetchAI() {
       try {
         setAiLoading(true);
@@ -40,15 +46,7 @@ function LineupOptimizer() {
         if (!session) return;
         const authHeader = { Authorization: `Bearer ${session.access_token}` };
 
-        // Get teams
-        const teamsRes = await fetch('/api/yahoo/myteams', { headers: authHeader });
-        if (teamsRes.status === 404) { setNeedsConnect(true); setAiLoading(false); return; }
-        if (!teamsRes.ok) { setAiError('Could not load Yahoo data.'); setAiLoading(false); return; }
-
-        const { teams } = await teamsRes.json();
-        if (!teams?.length) { setNeedsConnect(true); setAiLoading(false); return; }
-
-        const { leagueKey, teamKey } = teams[0];
+        const { leagueKey, teamKey } = selected;
 
         // Get dashboard data (roster + matchup)
         const dashRes = await fetch(
@@ -81,8 +79,8 @@ function LineupOptimizer() {
         setAiLoading(false);
       }
     }
-    if (mounted) fetchAI();
-  }, [mounted]);
+    fetchAI();
+  }, [mounted, leagueLoading, selected?.leagueKey]);
 
   if (!mounted) return <PageSkeleton />;
 

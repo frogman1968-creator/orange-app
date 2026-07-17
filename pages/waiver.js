@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
+import { useLeague } from '../lib/LeagueContext';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 
@@ -59,37 +60,31 @@ function WaiverPage() {
   const [aiLoading, setAiLoading]   = useState(false);
   const [aiError, setAiError]       = useState(null);
 
-  // League context from dashboard cache
-  const [leagueKey, setLeagueKey]   = useState(null);
-  const [teamKey, setTeamKey]       = useState(null);
+  // Multi-league context
+  const { selected, loading: leagueLoading, notConnected } = useLeague();
+  const leagueKey = selected?.leagueKey;
+  const teamKey   = selected?.teamKey;
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return <PageSkeleton />;
 
   useEffect(() => {
+    if (leagueLoading) return;
+    if (notConnected) { setError('Connect your Yahoo account first.'); setLoading(false); return; }
+    if (!selected) return;
+
     async function load() {
       setLoading(true);
       setError(null);
+      setPlayers([]);
+      setRoster([]);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) { setError('Not logged in.'); return; }
 
         const authHeader = { Authorization: `Bearer ${token}` };
-
-        // Get teams first to find league_key + team_key
-        const teamsRes = await fetch('/api/yahoo/myteams', { headers: authHeader });
-        const teamsData = await teamsRes.json();
-        if (!teamsData.teams?.length) {
-          setError('No Yahoo leagues found. Connect your Yahoo account first.');
-          return;
-        }
-
-        const firstTeam = teamsData.teams[0];
-        const lk = firstTeam.leagueKey;
-        const tk = firstTeam.teamKey;
-        setLeagueKey(lk);
-        setTeamKey(tk);
+        const { leagueKey: lk, teamKey: tk } = selected;
 
         const waiverRes = await fetch(
           `/api/yahoo/waiver?league_key=${lk}&team_key=${tk}`,
@@ -107,7 +102,7 @@ function WaiverPage() {
       }
     }
     load();
-  }, []);
+  }, [leagueLoading, selected?.leagueKey]);
 
   async function fetchAiRecs() {
     if (aiLoading || !players.length) return;

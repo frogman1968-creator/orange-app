@@ -1,9 +1,11 @@
 import Head from 'next/head';
 import { Analytics } from '@vercel/analytics/react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { LeagueProvider } from '../lib/LeagueContext';
 
 export default function App({ Component, pageProps }) {
   return (
+    <LeagueProvider>
     <ErrorBoundary context="this page">
       <Head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -44,5 +46,6 @@ export default function App({ Component, pageProps }) {
       <Component {...pageProps} />
       <Analytics />
     </ErrorBoundary>
+    </LeagueProvider>
   );
 }

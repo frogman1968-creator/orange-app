@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { DRAFT_POOL } from '../lib/sampleData';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
+import { useLeague } from '../lib/LeagueContext';
 
 // Default requirements used until real league settings load
 const DEFAULT_REQUIREMENTS = { QB: 2, RB: 4, WR: 4, TE: 2, K: 1, DEF: 1 };
@@ -162,16 +163,18 @@ function DraftCompanion() {
   const [aiPickUsed, setAiPickUsed] = useState(null);
 
   // League settings (loaded from Yahoo via Supabase cache)
-  const [leagueKey, setLeagueKey]               = useState(null);
   const [rosterRequirements, setRosterRequirements] = useState(DEFAULT_REQUIREMENTS);
   const [rosterPositions, setRosterPositions]   = useState(null);
 
   const { isPremium } = useTrial();
+  const { selected, loading: leagueLoading } = useLeague();
+  const leagueKey = selected?.leagueKey;
 
   useEffect(() => setMounted(true), []);
 
-  // Fetch league settings after mount to get real roster requirements
+  // Fetch league settings when selected league changes
   useEffect(() => {
+    if (leagueLoading || !selected) return;
     async function loadLeagueSettings() {
       try {
         const { supabase } = await import('../lib/supabaseClient');
@@ -179,16 +182,8 @@ function DraftCompanion() {
         if (!session) return;
         const auth = { Authorization: `Bearer ${session.access_token}` };
 
-        const teamsRes = await fetch('/api/yahoo/myteams', { headers: auth });
-        if (!teamsRes.ok) return;
-        const { teams } = await teamsRes.json();
-        if (!teams?.length) return;
-
-        const lk = teams[0].leagueKey;
-        setLeagueKey(lk);
-
         const settingsRes = await fetch(
-          `/api/yahoo/settings?league_key=${encodeURIComponent(lk)}`,
+          `/api/yahoo/settings?league_key=${encodeURIComponent(selected.leagueKey)}`,
           { headers: auth }
         );
         if (!settingsRes.ok) return;
@@ -203,7 +198,7 @@ function DraftCompanion() {
       }
     }
     loadLeagueSettings();
-  }, []);
+  }, [leagueLoading, selected?.leagueKey]);
   if (!mounted) return <PageSkeleton />;
 
   const myPickSlots = useMemo(

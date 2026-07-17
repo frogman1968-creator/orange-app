@@ -8,6 +8,7 @@ import { useRouter } from 'next/router';
 import { withAuth } from '../lib/withAuth';
 import { useTrial } from '../lib/useTrial';
 import { supabase } from '../lib/supabaseClient';
+import { useLeague } from '../lib/LeagueContext';
 
 const BET_TYPES = [
   { value: 'total_score', label: 'Total Team Score' },
@@ -33,9 +34,12 @@ function TrashTalk() {
   const { isPremium } = useTrial();
   const [mounted, setMounted] = useState(false);
 
-  const [leagueKey,    setLeagueKey]    = useState('');
-  const [teamKey,      setTeamKey]      = useState('');
-  const [teamName,     setTeamName]     = useState('');
+  // Multi-league context
+  const { selected, loading: leagueLoading, notConnected } = useLeague();
+  const leagueKey = selected?.leagueKey || '';
+  const teamKey   = selected?.teamKey   || '';
+  const teamName  = selected?.name      || '';
+
   const [week,         setWeek]         = useState(null);
   const [leagueTeams,  setLeagueTeams]  = useState([]);
 
@@ -61,7 +65,12 @@ function TrashTalk() {
   const [confirming, setConfirming] = useState(null); // bet_id being confirmed
 
   useEffect(() => { setMounted(true); }, []);
-  useEffect(() => { if (mounted) loadData(); }, [mounted]);
+  useEffect(() => {
+    if (!mounted || leagueLoading) return;
+    if (notConnected) { setNeedsConnect(true); setLoading(false); return; }
+    if (!selected) return;
+    loadData();
+  }, [mounted, leagueLoading, selected?.leagueKey]);
 
   async function getAuthHeader() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -70,18 +79,11 @@ function TrashTalk() {
 
   async function loadData() {
     setLoading(true);
+    setBets([]);
+    setLeagueTeams([]);
     try {
       const headers = await getAuthHeader();
-
-      const teamsRes = await fetch('/api/yahoo/myteams', { headers });
-      if (teamsRes.status === 404) { setNeedsConnect(true); setLoading(false); return; }
-      if (!teamsRes.ok) { setError('Could not load Yahoo data.'); setLoading(false); return; }
-
-      const { teams } = await teamsRes.json();
-      if (!teams?.length) { setNeedsConnect(true); setLoading(false); return; }
-
-      const { leagueKey: lk, teamKey: tk, name: tn } = teams[0];
-      setLeagueKey(lk); setTeamKey(tk); setTeamName(tn);
+      const { leagueKey: lk, teamKey: tk } = selected;
 
       const standRes = await fetch(`/api/yahoo/standings?league_key=${encodeURIComponent(lk)}`, { headers });
       if (standRes.ok) {
