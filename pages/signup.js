@@ -29,7 +29,7 @@ export default function Signup() {
       email,
       password,
       options: {
-        emailRedirectTo: 'https://orangeff.app/dashboard',
+        emailRedirectTo: 'https://orangeff.app/onboarding',
       },
     });
 

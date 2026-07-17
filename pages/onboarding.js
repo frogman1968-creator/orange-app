@@ -1,3 +1,13 @@
+/**
+ * /onboarding — New user walkthrough
+ *
+ * Flow:
+ *   Welcome → Draft smarter → Start the right guys → Connect Yahoo → Enter the league
+ *
+ * Triggered by signup emailRedirectTo.
+ * If user has already been onboarded, redirects to /dashboard immediately.
+ */
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 
@@ -21,15 +31,23 @@ const STEPS = [
     icon: '📊',
     title: 'Start the right guys.',
     subtitle: 'Every week, automatically.',
-    body: 'Opponent matchup grades, Vegas game totals, expert consensus, and bye week alerts — all combined into a single Start/Sit recommendation for your roster.',
+    body: 'Opponent matchup grades, Vegas game totals, expert consensus, and bye week alerts — all combined into a single AI recommendation for your roster.',
     cta: 'Next',
     preview: 'lineup',
   },
   {
+    icon: '🔗',
+    title: 'Connect your Yahoo league.',
+    subtitle: 'Where the magic happens.',
+    body: 'Orange reads your roster, matchup, league settings, and scoring format directly from Yahoo. It takes about 30 seconds and unlocks everything.',
+    cta: 'Connect Yahoo →',
+    connectStep: true,
+  },
+  {
     icon: '🏆',
-    title: 'Win your league.',
+    title: 'You\'re ready.',
     subtitle: '14 days free. Then $4.99/month.',
-    body: 'Your free trial starts now. Full access to every feature for 14 days — no card required. Upgrade anytime to keep your edge all season.',
+    body: 'Full access to every feature for 14 days — no card required. Your league is waiting.',
     cta: 'Enter the league →',
     final: true,
   },
@@ -39,10 +57,27 @@ export default function Onboarding() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [animating, setAnimating] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    // If already onboarded, skip straight to dashboard
+    if (typeof window !== 'undefined' && localStorage.getItem('orange_onboarded') === 'true') {
+      router.replace('/dashboard');
+    }
+  }, [mounted]);
 
   const current = STEPS[step];
 
   function advance() {
+    if (current.connectStep) {
+      // Mark onboarded so back-navigation doesn't loop
+      localStorage.setItem('orange_onboarded', 'true');
+      router.push('/connect');
+      return;
+    }
     if (current.final) {
       localStorage.setItem('orange_onboarded', 'true');
       router.push('/dashboard');
@@ -59,6 +94,8 @@ export default function Onboarding() {
     localStorage.setItem('orange_onboarded', 'true');
     router.push('/dashboard');
   }
+
+  if (!mounted) return null;
 
   return (
     <div style={styles.page}>
@@ -83,7 +120,7 @@ export default function Onboarding() {
         <div style={styles.subtitle}>{current.subtitle}</div>
         <div style={styles.body}>{current.body}</div>
 
-        {/* Feature preview cards */}
+        {/* Draft preview */}
         {current.preview === 'draft' && (
           <div style={styles.previewCard}>
             <div style={styles.previewRow}>
@@ -105,6 +142,7 @@ export default function Onboarding() {
           </div>
         )}
 
+        {/* Lineup preview */}
         {current.preview === 'lineup' && (
           <div style={styles.previewCard}>
             <div style={styles.previewRow}>
@@ -126,6 +164,29 @@ export default function Onboarding() {
           </div>
         )}
 
+        {/* Connect Yahoo step visual */}
+        {current.connectStep && (
+          <div style={styles.connectCard}>
+            <div style={styles.connectRow}>
+              <div style={styles.connectDot} />
+              <div style={styles.connectLabel}>Your roster</div>
+            </div>
+            <div style={styles.connectRow}>
+              <div style={styles.connectDot} />
+              <div style={styles.connectLabel}>Live matchup data</div>
+            </div>
+            <div style={styles.connectRow}>
+              <div style={styles.connectDot} />
+              <div style={styles.connectLabel}>League scoring format</div>
+            </div>
+            <div style={styles.connectRow}>
+              <div style={styles.connectDot} />
+              <div style={styles.connectLabel}>All {'{N}'} of your leagues</div>
+            </div>
+          </div>
+        )}
+
+        {/* Final step */}
         {current.final && (
           <div style={styles.trialBadge}>
             <div style={styles.trialBadgeTitle}>✓ 14-day free trial</div>
@@ -139,7 +200,12 @@ export default function Onboarding() {
         <button style={styles.ctaBtn} onClick={advance}>
           {current.cta}
         </button>
-        {step > 0 && !current.final && (
+        {current.connectStep && (
+          <button style={styles.skipConnectBtn} onClick={() => setStep(s => s + 1)}>
+            Skip for now — connect later
+          </button>
+        )}
+        {step > 0 && !current.final && !current.connectStep && (
           <button style={styles.backBtn} onClick={() => setStep(s => s - 1)}>Back</button>
         )}
       </div>
@@ -172,9 +238,11 @@ const styles = {
   title: { fontSize: 28, fontWeight: 900, marginBottom: 8, letterSpacing: '-0.5px' },
   subtitle: { fontSize: 16, fontWeight: 600, color: '#f97316', marginBottom: 16 },
   body: { fontSize: 15, color: '#a1a1aa', lineHeight: 1.6, maxWidth: 320, marginBottom: 28 },
+
   previewCard: {
     background: '#141414', border: '1px solid #27272a', borderRadius: 14,
-    padding: '12px 14px', width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 12,
+    padding: '12px 14px', width: '100%', maxWidth: 340,
+    display: 'flex', flexDirection: 'column', gap: 12,
   },
   previewRow: { display: 'flex', alignItems: 'center', gap: 10 },
   previewInfo: { flex: 1, textAlign: 'left' },
@@ -185,17 +253,35 @@ const styles = {
   posBadgeQB: { ...posBadgeBase, background: '#3a1a00', color: '#fb923c' },
   survivalChip: { borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   gradeChip: { fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'center' },
+
+  connectCard: {
+    background: '#0d1117', border: '1px solid #1e2030', borderRadius: 14,
+    padding: '16px 20px', width: '100%', maxWidth: 300,
+    display: 'flex', flexDirection: 'column', gap: 14,
+  },
+  connectRow: { display: 'flex', alignItems: 'center', gap: 12 },
+  connectDot: {
+    width: 8, height: 8, borderRadius: '50%', background: '#ff6b1a', flexShrink: 0,
+    boxShadow: '0 0 6px #ff6b1a88',
+  },
+  connectLabel: { fontSize: 14, color: '#ccc', fontWeight: 500 },
+
   trialBadge: {
     background: '#0d1f0d', border: '1px solid #22c55e33', borderRadius: 14,
     padding: '16px 24px', textAlign: 'center',
   },
   trialBadgeTitle: { fontSize: 16, fontWeight: 800, color: '#22c55e', marginBottom: 4 },
   trialBadgeSub: { fontSize: 13, color: '#71717a' },
+
   footer: { display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 32 },
   ctaBtn: {
     background: '#f97316', color: '#000', border: 'none',
     borderRadius: 12, padding: '16px', fontSize: 16, fontWeight: 800,
     cursor: 'pointer', width: '100%',
+  },
+  skipConnectBtn: {
+    background: 'transparent', color: '#52525b', border: 'none',
+    fontSize: 13, cursor: 'pointer', padding: '8px', textAlign: 'center',
   },
   backBtn: {
     background: 'transparent', color: '#52525b', border: 'none',
