@@ -165,6 +165,19 @@ function Dashboard() {
       {view === 'matchup'   && <MatchupView matchup={matchup} />}
       {view === 'standings' && <StandingsView teams={liveData?.teams || []} myTeamKey={myTeamKey} />}
 
+      {/* Monday Breakdown card */}
+      <div
+        style={styles.breakdownCard}
+        onClick={() => router.push('/breakdown')}
+      >
+        <div style={styles.breakdownLeft}>
+          <div style={styles.breakdownLabel}>MONDAY BREAKDOWN</div>
+          <div style={styles.breakdownTitle}>Last Week's Recap →</div>
+          <div style={styles.breakdownSub}>Who carried you. Who let you down. The bench bomb you left sitting.</div>
+        </div>
+        <div style={styles.breakdownIcon}>📋</div>
+      </div>
+
       {/* Bottom Nav */}
       <div style={styles.bottomNav}>
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
@@ -617,6 +630,25 @@ const styles = {
   waiverAdd: { fontSize: 13, fontWeight: 700, color: '#22c55e' },
   waiverDrop: { fontSize: 13, fontWeight: 700, color: '#ef4444', marginLeft: 8 },
   waiverReason: { fontSize: 12, color: '#71717a', lineHeight: 1.4 },
+  breakdownCard: {
+    margin: '16px 16px 0',
+    background: '#0d0d1a',
+    border: '1px solid #3b3bff33',
+    borderRadius: 14,
+    padding: '14px 16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+  },
+  breakdownLeft: { flex: 1 },
+  breakdownLabel: {
+    fontSize: 10, fontWeight: 800, color: '#6366f1',
+    textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4,
+  },
+  breakdownTitle: { fontSize: 16, fontWeight: 800, marginBottom: 4 },
+  breakdownSub: { fontSize: 12, color: '#52525b', lineHeight: 1.5 },
+  breakdownIcon: { fontSize: 28, marginLeft: 12 },
   bottomNav: {
     position: 'fixed',
     bottom: 0,
