@@ -1,9 +1,9 @@
 /**
  * POST /api/ai/startsit
- * Takes the user's roster and returns AI-powered start/sit recommendations.
+ * AI-powered start/sit recommendations.
  *
- * Body: { roster: [...players], matchup: {...}, scoringType: 'head' | 'ppr' | 'standard' }
- * Returns: { recommendations: [...], analysis: string }
+ * Body: { roster: [...players], matchup: {...}, leagueKey: string }
+ * Returns: { analysis: string }
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -11,10 +11,20 @@ import { createClient } from '@supabase/supabase-js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+async function getLeagueSummary(supabase, userId, leagueKey) {
+  if (!leagueKey) return null;
+  const { data } = await supabase
+    .from('league_settings')
+    .select('scoring_summary, scoring_format')
+    .eq('user_id', userId)
+    .eq('league_key', leagueKey)
+    .single();
+  return data || null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  // Auth check
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -26,33 +36,42 @@ export default async function handler(req, res) {
   const { data: { user } } = await anonClient.auth.getUser();
   if (!user) return res.status(401).json({ error: 'Invalid session' });
 
-  const { roster = [], matchup = null, scoringType = 'head' } = req.body;
+  const { roster = [], matchup = null, leagueKey } = req.body;
+  if (!roster.length) return res.status(400).json({ error: 'No roster provided' });
 
-  if (!roster.length) {
-    return res.status(400).json({ error: 'No roster provided' });
-  }
+  // Pull cached league settings
+  const serviceClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const leagueSettings = await getLeagueSummary(serviceClient, user.id, leagueKey);
 
-  // Build a concise roster summary for the prompt
+  const scoringContext = leagueSettings?.scoring_summary
+    ? `\nLeague: ${leagueSettings.scoring_summary}`
+    : '';
+
+  const scoringLabel = leagueSettings?.scoring_format || 'Head-to-Head';
+
   const rosterText = roster.map(p => {
-    const status = p.injuryNote ? ` [${p.injuryNote}]` : (p.status && p.status !== 'active' ? ` [${p.status.toUpperCase()}]` : '');
-    return `- ${p.name} (${p.position}, ${p.editorialTeam || 'FA'})${status} — slot: ${p.selectedPosition}`;
+    const statusNote = p.injuryNote
+      ? ` [${p.injuryNote}]`
+      : (p.status && p.status !== 'active' ? ` [${p.status.toUpperCase()}]` : '');
+    return `- ${p.name} (${p.position}, ${p.editorialTeam || 'FA'})${statusNote} — slot: ${p.selectedPosition}`;
   }).join('\n');
 
   const matchupText = matchup
     ? `This week they face ${matchup.opponent?.name || 'unknown opponent'}.`
     : 'No matchup data available.';
 
-  const scoringLabel = scoringType === 'ppr' ? 'PPR' : scoringType === 'standard' ? 'Standard' : 'Head-to-Head';
-
-  const prompt = `You are an expert fantasy football analyst. A manager needs start/sit advice for their ${scoringLabel} league.
+  const prompt = `You are an expert fantasy football analyst. A manager needs start/sit advice for their ${scoringLabel} league.${scoringContext}
 
 Their roster:
 ${rosterText}
 
 ${matchupText}
 
-Based on this roster, provide:
-1. TOP 3 STARTS — the 3 players they should definitely start this week, with a one-sentence reason for each.
+Based on this roster and the league's specific scoring rules, provide:
+1. TOP 3 STARTS — the 3 players they should definitely start this week, with a one-sentence reason for each. Factor in reception value if this is a PPR or Half-PPR league.
 2. SIT THIS WEEK — any players they should consider sitting (injured, bad matchup, poor form), with a brief reason.
 3. ONE KEY INSIGHT — one sharp observation about their roster situation this week.
 
@@ -66,7 +85,6 @@ Be direct and specific. No generic advice. Reference the actual players by name.
     });
 
     const text = message.content?.[0]?.text || '';
-
     return res.json({ analysis: text });
   } catch (err) {
     console.error('AI startsit error:', err);

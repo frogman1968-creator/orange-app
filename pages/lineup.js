@@ -27,6 +27,7 @@ function LineupOptimizer() {
   const [aiError, setAiError]         = useState(null);
   const [needsConnect, setNeedsConnect] = useState(false);
 
+  const { isPremium } = useTrial();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -68,7 +69,7 @@ function LineupOptimizer() {
         const aiRes = await fetch('/api/ai/startsit', {
           method: 'POST',
           headers: { ...authHeader, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roster, matchup, scoringType: league?.scoring_type || 'head' }),
+          body: JSON.stringify({ roster, matchup, leagueKey }),
         });
         if (!aiRes.ok) { setAiError('AI analysis failed. Try again.'); setAiLoading(false); return; }
 
@@ -84,8 +85,6 @@ function LineupOptimizer() {
   }, [mounted]);
 
   if (!mounted) return <PageSkeleton />;
-
-  const { isPremium } = useTrial();
 
   const weekData   = SCHEDULE[selectedWeek] || SCHEDULE[CURRENT_WEEK];
   const weekRecs   = WEEKLY_RECS[selectedWeek] || WEEKLY_RECS[CURRENT_WEEK];

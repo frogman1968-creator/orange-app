@@ -122,7 +122,7 @@ function WaiverPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ players: players.slice(0, 15), roster }),
+        body: JSON.stringify({ players: players.slice(0, 15), roster, leagueKey }),
       });
       const data = await res.json();
       if (data.error) { setAiError(data.error); return; }
