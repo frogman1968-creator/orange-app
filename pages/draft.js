@@ -261,6 +261,7 @@ function DraftCompanion() {
           draftPosition,
           numTeams,
           leagueKey,
+          leagueDraftCounts: opponentCounts,
         }),
       });
       const data = await res.json();
