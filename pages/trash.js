@@ -42,6 +42,7 @@ function TrashTalk() {
   const teamName  = selected?.name      || '';
 
   const [week,         setWeek]         = useState(null);
+  const [copiedBetId,  setCopiedBetId]  = useState(null);
   const [leagueTeams,  setLeagueTeams]  = useState([]);
 
   const [bets,         setBets]         = useState([]);
@@ -355,6 +356,21 @@ function TrashTalk() {
                       </button>
                     </div>
                   )}
+
+                  {/* Share button */}
+                  {bet.share_token && (
+                    <button
+                      style={s.shareBtn}
+                      onClick={() => {
+                        const url = `${window.location.origin}/bet/${bet.share_token}`;
+                        navigator.clipboard.writeText(url);
+                        setCopiedBetId(bet.id);
+                        setTimeout(() => setCopiedBetId(null), 2000);
+                      }}
+                    >
+                      {copiedBetId === bet.id ? '✅ Link Copied!' : '🔗 Share This Challenge'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -432,6 +448,7 @@ const s = {
   confirmRow:   { display: 'flex', gap: 8, marginTop: 12 },
   paidBtn:      { flex: 1, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 10, padding: '10px', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
   deadbeatBtn:  { flex: 1, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '10px', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  shareBtn:     { width: '100%', marginTop: 10, background: 'none', border: '1px solid #2a2a2a', borderRadius: 10, padding: '9px', fontSize: 12, fontWeight: 700, color: '#888', cursor: 'pointer' },
   deadbeatBoard:{ margin: '24px 16px 0', padding: '20px', background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16 },
   deadbeatTitle:{ fontSize: 15, fontWeight: 800, color: '#ef4444', marginBottom: 4 },
   deadbeatSub:  { fontSize: 12, color: '#71717a', marginBottom: 14 },
