@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/push/triggers/lineup-reminder",
+      "schedule": "0 15 * * 0"
+    },
+    {
+      "path": "/api/push/triggers/waiver-alert",
+      "schedule": "0 5 * * 3"
+    }
+  ]
+}
