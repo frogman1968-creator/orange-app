@@ -9,6 +9,7 @@ import { withAuth } from '../lib/withAuth';
 import { useTrial } from '../lib/useTrial';
 import { supabase } from '../lib/supabaseClient';
 import { useLeague } from '../lib/LeagueContext';
+import LeaguePicker from '../components/LeaguePicker';
 
 const BET_TYPES = [
   { value: 'total_score', label: 'Total Team Score' },
@@ -35,7 +36,7 @@ function TrashTalk() {
   const [mounted, setMounted] = useState(false);
 
   // Multi-league context
-  const { selected, loading: leagueLoading, notConnected } = useLeague();
+  const { leagues, selected, setSelected, loading: leagueLoading, notConnected } = useLeague();
   const leagueKey = selected?.leagueKey || '';
   const teamKey   = selected?.teamKey   || '';
   const teamName  = selected?.name      || '';
@@ -209,7 +210,9 @@ function TrashTalk() {
       <div style={s.header}>
         <button style={s.backBtn} onClick={() => router.push('/dashboard')}>← Back</button>
         <div style={s.headerTitle}>🔥 Trash Talk Table</div>
-        <div style={{ width: 60 }} />
+        <div style={{ minWidth: 60, display: 'flex', justifyContent: 'flex-end' }}>
+          <LeaguePicker leagues={leagues} selected={selected} onSelect={setSelected} />
+        </div>
       </div>
 
       {needsConnect && (
