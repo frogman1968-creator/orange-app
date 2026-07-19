@@ -12,6 +12,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
+import { useLeague } from '../lib/LeagueContext';
 
 // Grade → color
 const GRADE_COLOR = {
@@ -63,6 +64,8 @@ function DraftGradesPage() {
   const router = useRouter();
   const { isPremium } = useTrial();
 
+  const { selected, loading: leagueLoading, notConnected } = useLeague();
+
   const [loading, setLoading]     = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [error, setError]         = useState(null);
@@ -71,24 +74,25 @@ function DraftGradesPage() {
   const [mounted, setMounted]     = useState(false);
 
   useEffect(() => setMounted(true), []);
-  useEffect(() => { if (mounted) loadData(); }, [mounted]);
+  useEffect(() => {
+    if (!mounted || leagueLoading) return;
+    if (notConnected) { setError('Connect your Yahoo account first.'); setLoading(false); return; }
+    if (!selected) return;
+    loadData();
+  }, [mounted, leagueLoading, selected?.leagueKey]);
 
   async function loadData() {
     setLoading(true);
     setError(null);
+    setRawData(null);
+    setReport(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) { setError('Not logged in.'); return; }
       const auth = { Authorization: `Bearer ${token}` };
 
-      // Get teams
-      const teamsRes = await fetch('/api/yahoo/myteams', { headers: auth });
-      if (teamsRes.status === 404) { setError('Connect your Yahoo account first.'); return; }
-      const { teams } = await teamsRes.json();
-      if (!teams?.length) { setError('No Yahoo league found.'); return; }
-
-      const { leagueKey, teamKey } = teams[0];
+      const { leagueKey, teamKey } = selected;
 
       // Get comparative grades data
       const res = await fetch(
