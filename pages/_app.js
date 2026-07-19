@@ -41,6 +41,26 @@ export default function App({ Component, pageProps }) {
           -webkit-font-smoothing: antialiased;
         }
         button { font-family: inherit; }
+
+        /* Desktop: center app like a phone in a browser */
+        @media (min-width: 640px) {
+          body {
+            background: #050505;
+          }
+          #__next {
+            max-width: 480px;
+            margin: 0 auto;
+            min-height: 100vh;
+            background: #0a0a0a;
+            box-shadow: 0 0 80px rgba(249, 115, 22, 0.06), 0 0 0 1px #1a1a1a;
+          }
+        }
+
+        @media (min-width: 1024px) {
+          #__next {
+            max-width: 520px;
+          }
+        }
       `}</style>
 
       <Component {...pageProps} />
