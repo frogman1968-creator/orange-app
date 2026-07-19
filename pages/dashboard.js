@@ -6,6 +6,7 @@ import { useTrial } from '../lib/useTrial';
 import { useLeague } from '../lib/LeagueContext';
 import LeaguePicker from '../components/LeaguePicker';
 import PaywallModal from '../components/PaywallModal';
+import ShareCard from '../components/ShareCard';
 
 function Dashboard() {
   const router = useRouter();
@@ -245,6 +246,8 @@ function RosterView({ starters = [], bench = [] }) {
 // ─── Matchup View ─────────────────────────────────────────────────────────────
 
 function MatchupView({ matchup }) {
+  const [showShare, setShowShare] = useState(false);
+
   if (!matchup) {
     return (
       <div style={{ ...styles.section, paddingTop: 24, textAlign: 'center' }}>
@@ -266,6 +269,19 @@ function MatchupView({ matchup }) {
 
   return (
     <div style={styles.section}>
+      {showShare && (
+        <ShareCard
+          type="matchup"
+          data={{
+            week:     matchup.week,
+            myScore:  myPts,
+            oppScore: oppPts,
+            teamName: matchup.myTeam?.name || 'My Team',
+            oppName:  matchup.opponent?.name || 'Opponent',
+          }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       <div style={styles.matchupHeader}>
         <div style={styles.matchupSide}>
           <div style={{ ...styles.matchupScore, color: winning ? '#22c55e' : '#f97316' }}>
@@ -291,6 +307,9 @@ function MatchupView({ matchup }) {
           </span>
         </div>
       )}
+      <button style={styles.matchupShareBtn} onClick={() => setShowShare(true)}>
+        ↗ Share This Matchup
+      </button>
     </div>
   );
 }
@@ -579,6 +598,12 @@ const styles = {
   },
   edgeLabel: { fontSize: 12, color: '#71717a' },
   edgeValue: { fontSize: 13, fontWeight: 700, color: '#22c55e' },
+  matchupShareBtn: {
+    display: 'block', width: '100%', marginTop: 12,
+    background: 'none', border: '1px solid #2a2a2a',
+    borderRadius: 10, padding: '10px', fontSize: 13,
+    fontWeight: 700, color: '#f97316', cursor: 'pointer',
+  },
   weaknessGrid: {
     display: 'flex',
     gap: 8,

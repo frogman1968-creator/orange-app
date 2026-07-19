@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
 import { useLeague } from '../lib/LeagueContext';
+import ShareCard from '../components/ShareCard';
 
 // Grade → color
 const GRADE_COLOR = {
@@ -144,6 +145,8 @@ function DraftGradesPage() {
   }
 
   // Prevent SSR flash
+  const [showShare, setShowShare] = useState(false);
+
   const [mounted2, setMounted2] = useState(false);
   useEffect(() => setMounted2(true), []);
   if (!mounted2) return null;
@@ -151,6 +154,20 @@ function DraftGradesPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
+
+      {/* Share card modal */}
+      {showShare && report && (
+        <ShareCard
+          type="draft"
+          data={{
+            grade:    report.overallGrade,
+            rank:     rawData?.myTeam?.ranks?.total,
+            numTeams: rawData?.numTeams,
+            teamName: rawData?.myTeam?.name,
+          }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       <style>{`
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -336,6 +353,16 @@ function DraftGradesPage() {
               </div>
             )}
 
+            {/* Share button */}
+            {isPremium && report && (
+              <button
+                style={S.shareGradeBtn}
+                onClick={() => setShowShare(true)}
+              >
+                ↗ Share My Grade
+              </button>
+            )}
+
             {/* Re-run button */}
             {isPremium && !aiLoading && (
               <button
@@ -453,6 +480,13 @@ const S = {
   aiCard: {
     background: '#0d0d1a', border: '1px solid #1a1a2e', borderRadius: 14,
     padding: '24px 16px', textAlign: 'center', marginBottom: 14,
+  },
+
+  // Share btn
+  shareGradeBtn: {
+    display: 'block', width: '100%', background: '#f97316', color: '#000',
+    border: 'none', borderRadius: 12, padding: '14px 0',
+    fontSize: 15, fontWeight: 800, cursor: 'pointer', marginTop: 16, marginBottom: 8,
   },
 
   // Re-run btn

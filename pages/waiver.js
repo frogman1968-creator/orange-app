@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
 import { useLeague } from '../lib/LeagueContext';
+import ShareCard from '../components/ShareCard';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 
@@ -63,7 +64,10 @@ function WaiverPage() {
   const [aiRecs, setAiRecs]       = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError]     = useState(null);
-  const [aiMode, setAiMode]       = useState(null); // which mode was used for current recs
+  const [aiMode, setAiMode]       = useState(null);
+
+  // Share card state
+  const [shareData, setShareData] = useState(null); // { playerName, position, nflTeam }
 
   // Multi-league context
   const { selected, loading: leagueLoading, notConnected } = useLeague();
@@ -183,6 +187,16 @@ function WaiverPage() {
 
   return (
     <div style={S.page}>
+
+      {/* Waiver share card */}
+      {shareData && (
+        <ShareCard
+          type="waiver"
+          data={shareData}
+          onClose={() => setShareData(null)}
+        />
+      )}
+
       <style>{`
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         @keyframes spin{to{transform:rotate(360deg)}}
@@ -292,9 +306,21 @@ function WaiverPage() {
                       <span style={S.aiPickTeam}>{pick.team}</span>
                       <span style={S.aiPickReason}>{pick.reason}</span>
                     </div>
-                    {needPositions.has(pick.position) && (
-                      <span style={S.fitBadge}>NEED</span>
-                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+                      {needPositions.has(pick.position) && (
+                        <span style={S.fitBadge}>NEED</span>
+                      )}
+                      <button
+                        style={S.pickShareBtn}
+                        onClick={() => setShareData({
+                          playerName: pick.name,
+                          position:   pick.position,
+                          nflTeam:    pick.team,
+                        })}
+                      >
+                        ↗
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {aiRecs.insight && (
@@ -524,6 +550,11 @@ const S = {
   aiRefreshBtn: {
     background: 'transparent', border: 'none', fontSize: 11,
     color: '#52525b', cursor: 'pointer', padding: '8px 0 0', display: 'block',
+  },
+  pickShareBtn: {
+    background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#f97316',
+    borderRadius: 6, padding: '4px 8px', fontSize: 13, fontWeight: 800,
+    cursor: 'pointer',
   },
   aiError: { fontSize: 12, color: '#f87171', marginTop: 8 },
   aiRetry: { color: '#f97316', cursor: 'pointer', marginLeft: 6 },
