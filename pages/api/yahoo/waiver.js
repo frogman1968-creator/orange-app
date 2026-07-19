@@ -51,30 +51,89 @@ export default async function handler(req, res) {
       getTeamRoster(access_token, team_key),
     ]);
 
-    // Score each player — higher = better pickup
-    const rosterPositions = roster.map(p => p.position);
-    const positionNeeds = {
-      QB:  rosterPositions.filter(p => p === 'QB').length < 2  ? 1.2 : 0.8,
-      RB:  rosterPositions.filter(p => p === 'RB').length < 3  ? 1.3 : 0.7,
-      WR:  rosterPositions.filter(p => p === 'WR').length < 3  ? 1.3 : 0.7,
-      TE:  rosterPositions.filter(p => p === 'TE').length < 2  ? 1.2 : 0.8,
-      K:   rosterPositions.filter(p => p === 'K').length  < 1  ? 1.1 : 0.5,
-      DEF: rosterPositions.filter(p => p === 'DEF').length < 1 ? 1.1 : 0.5,
-    };
+    // ── Roster needs analysis ─────────────────────────────────────────────────
+    const INJURY_OUT = ['out', 'ir', 'doubtful', 'pup', 'susp'];
+    const INJURY_RISKY = ['questionable', 'probable'];
 
+    const starters = roster.filter(p =>
+      p.selectedPosition && !['BN', 'IR'].includes(p.selectedPosition)
+    );
+
+    // Find injured starters by position
+    const injuredByPos = {};
+    for (const p of starters) {
+      const note = (p.injuryNote || '').toLowerCase();
+      if (INJURY_OUT.some(s => note.includes(s))) {
+        injuredByPos[p.position] = injuredByPos[p.position] || [];
+        injuredByPos[p.position].push({ name: p.name, status: 'OUT' });
+      } else if (INJURY_RISKY.some(s => note.includes(s))) {
+        injuredByPos[p.position] = injuredByPos[p.position] || [];
+        injuredByPos[p.position].push({ name: p.name, status: 'Q' });
+      }
+    }
+
+    // Count healthy starters + bench per position
+    const healthyCount = {};
+    const totalCount = {};
+    for (const p of roster) {
+      if (['BN', 'IR'].includes(p.selectedPosition)) continue;
+      const note = (p.injuryNote || '').toLowerCase();
+      const isOut = INJURY_OUT.some(s => note.includes(s));
+      totalCount[p.position] = (totalCount[p.position] || 0) + 1;
+      if (!isOut) healthyCount[p.position] = (healthyCount[p.position] || 0) + 1;
+    }
+
+    // Build human-readable needs array (shown in "For My Team" mode)
+    const rosterNeeds = [];
+
+    // Injured starters
+    for (const [pos, players] of Object.entries(injuredByPos)) {
+      const names = players.map(p => p.name).join(', ');
+      const status = players[0].status;
+      rosterNeeds.push({
+        pos,
+        priority: status === 'OUT' ? 'high' : 'medium',
+        reason: status === 'OUT'
+          ? `${names} is OUT — you need a ${pos}`
+          : `${names} is questionable — stream a ${pos} just in case`,
+      });
+    }
+
+    // Thin positions (fewer than 2 healthy non-K/DEF starters)
+    const minHealthy = { QB: 1, RB: 2, WR: 2, TE: 1 };
+    for (const [pos, min] of Object.entries(minHealthy)) {
+      const have = healthyCount[pos] || 0;
+      if (have < min && !injuredByPos[pos]) {
+        rosterNeeds.push({
+          pos,
+          priority: 'medium',
+          reason: `Thin at ${pos} — only ${have} healthy starter${have !== 1 ? 's' : ''}`,
+        });
+      }
+    }
+
+    // Build need multiplier map for scoring
+    const needMultiplierMap = { QB: 0.85, RB: 0.85, WR: 0.85, TE: 0.85, K: 0.6, DEF: 0.6 };
+    for (const need of rosterNeeds) {
+      needMultiplierMap[need.pos] = need.priority === 'high' ? 1.45 : 1.25;
+    }
+
+    // ── Score & rank players ──────────────────────────────────────────────────
     const ranked = freeAgents
       .map((p, index) => {
-        const needMultiplier = positionNeeds[p.position] || 1.0;
-        const addRankScore   = Math.max(0, 30 - index) * 2; // higher = more adds
+        const needMultiplier = needMultiplierMap[p.position] || 1.0;
+        const addRankScore   = Math.max(0, 30 - index) * 2;
         const projScore      = p.projectedPts * 1.5;
         const healthPenalty  = p.injuryNote ? -8 : 0;
         const score          = (addRankScore + projScore) * needMultiplier + healthPenalty;
+        // Attach roster fit reason if this position is needed
+        const fitReason = rosterNeeds.find(n => n.pos === p.position)?.reason || null;
 
-        return { ...p, score: Math.round(score * 10) / 10, needMultiplier };
+        return { ...p, score: Math.round(score * 10) / 10, needMultiplier, fitReason };
       })
       .sort((a, b) => b.score - a.score);
 
-    return res.json({ players: ranked, roster });
+    return res.json({ players: ranked, roster, rosterNeeds });
   } catch (err) {
     console.error('Waiver wire error:', err);
     return res.status(500).json({ error: 'Failed to fetch waiver data from Yahoo' });

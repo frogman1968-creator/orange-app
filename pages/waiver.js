@@ -16,6 +16,8 @@ const POS_COLORS = {
   DEF: { bg: '#dc2626', color: '#fff' },
 };
 
+const PRIORITY_COLOR = { high: '#ef4444', medium: '#f97316' };
+
 function PosBadge({ pos }) {
   const c = POS_COLORS[pos] || { bg: '#374151', color: '#fff' };
   return (
@@ -47,23 +49,25 @@ function WaiverPage() {
   const router = useRouter();
   const { isPremium } = useTrial();
 
-  const [mounted, setMounted]     = useState(false);
-  const [players, setPlayers]     = useState([]);
-  const [roster, setRoster]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [posFilter, setPosFilter] = useState('ALL');
-  const [search, setSearch]       = useState('');
+  const [mounted, setMounted]         = useState(false);
+  const [players, setPlayers]         = useState([]);
+  const [roster, setRoster]           = useState([]);
+  const [rosterNeeds, setRosterNeeds] = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState(null);
+  const [posFilter, setPosFilter]     = useState('ALL');
+  const [search, setSearch]           = useState('');
+  const [mode, setMode]               = useState('all'); // 'all' | 'fit'
 
   // AI state
-  const [aiRecs, setAiRecs]         = useState(null);
-  const [aiLoading, setAiLoading]   = useState(false);
-  const [aiError, setAiError]       = useState(null);
+  const [aiRecs, setAiRecs]       = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError]     = useState(null);
+  const [aiMode, setAiMode]       = useState(null); // which mode was used for current recs
 
   // Multi-league context
   const { selected, loading: leagueLoading, notConnected } = useLeague();
   const leagueKey = selected?.leagueKey;
-  const teamKey   = selected?.teamKey;
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return <PageSkeleton />;
@@ -72,37 +76,48 @@ function WaiverPage() {
     if (leagueLoading) return;
     if (notConnected) { setError('Connect your Yahoo account first.'); setLoading(false); return; }
     if (!selected) return;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      setPlayers([]);
-      setRoster([]);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) { setError('Not logged in.'); return; }
-
-        const authHeader = { Authorization: `Bearer ${token}` };
-        const { leagueKey: lk, teamKey: tk } = selected;
-
-        const waiverRes = await fetch(
-          `/api/yahoo/waiver?league_key=${lk}&team_key=${tk}`,
-          { headers: authHeader }
-        );
-        const waiverData = await waiverRes.json();
-        if (waiverData.error) { setError(waiverData.error); return; }
-
-        setPlayers(waiverData.players || []);
-        setRoster(waiverData.roster || []);
-      } catch (e) {
-        setError('Failed to load waiver wire. Try again.');
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
   }, [leagueLoading, selected?.leagueKey]);
+
+  // Clear AI recs when mode changes
+  useEffect(() => {
+    if (aiMode !== null && aiMode !== mode) setAiRecs(null);
+  }, [mode]);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    setPlayers([]);
+    setRoster([]);
+    setRosterNeeds([]);
+    setAiRecs(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { setError('Not logged in.'); return; }
+
+      const { leagueKey: lk, teamKey: tk } = selected;
+      const waiverRes = await fetch(
+        `/api/yahoo/waiver?league_key=${lk}&team_key=${tk}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await waiverRes.json();
+      if (data.error) { setError(data.error); return; }
+
+      setPlayers(data.players || []);
+      setRoster(data.roster || []);
+      setRosterNeeds(data.rosterNeeds || []);
+
+      // Auto-switch to "For My Team" if injuries detected
+      if (data.rosterNeeds?.some(n => n.priority === 'high')) {
+        setMode('fit');
+      }
+    } catch {
+      setError('Failed to load waiver wire. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function fetchAiRecs() {
     if (aiLoading || !players.length) return;
@@ -111,34 +126,68 @@ function WaiverPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
+
+      // In fit mode, pass only players at needed positions to keep picks relevant
+      const targetPlayers = mode === 'fit' && rosterNeeds.length
+        ? players.filter(p => rosterNeeds.some(n => n.pos === p.position)).slice(0, 15)
+          .concat(players.filter(p => !rosterNeeds.some(n => n.pos === p.position)).slice(0, 5))
+        : players.slice(0, 15);
+
       const res = await fetch('/api/ai/waiver', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ players: players.slice(0, 15), roster, leagueKey }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          players: targetPlayers,
+          roster,
+          leagueKey,
+          mode,
+          rosterNeeds,
+        }),
       });
       const data = await res.json();
       if (data.error) { setAiError(data.error); return; }
       setAiRecs(data);
-    } catch (e) {
+      setAiMode(mode);
+    } catch {
       setAiError('Could not reach AI. Try again.');
     } finally {
       setAiLoading(false);
     }
   }
 
+  // Needs positions set (for quick lookup)
+  const needPositions = useMemo(() => new Set(rosterNeeds.map(n => n.pos)), [rosterNeeds]);
+
+  // "For My Team" sorted list — needed positions float to top
+  const sortedPlayers = useMemo(() => {
+    if (mode !== 'fit' || !rosterNeeds.length) return players;
+    return [...players].sort((a, b) => {
+      const aNeed = needPositions.has(a.position) ? 1 : 0;
+      const bNeed = needPositions.has(b.position) ? 1 : 0;
+      if (bNeed !== aNeed) return bNeed - aNeed;
+      return b.score - a.score;
+    });
+  }, [players, mode, rosterNeeds, needPositions]);
+
   const filtered = useMemo(() => {
-    return players.filter(p => {
+    return sortedPlayers.filter(p => {
       const matchPos = posFilter === 'ALL' || p.position === posFilter;
       const matchSearch = !search || p.name?.toLowerCase().includes(search.toLowerCase());
+      // In fit mode, if a position filter is set, honor it; otherwise show all
       return matchPos && matchSearch;
     });
-  }, [players, posFilter, search]);
+  }, [sortedPlayers, posFilter, search]);
+
+  const highNeeds = rosterNeeds.filter(n => n.priority === 'high');
+  const medNeeds  = rosterNeeds.filter(n => n.priority === 'medium');
 
   return (
     <div style={S.page}>
+      <style>{`
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
 
       {/* Header */}
       <div style={S.header}>
@@ -157,7 +206,7 @@ function WaiverPage() {
       {/* Loading */}
       {loading && (
         <div style={S.loadingWrap}>
-          <div style={S.loadingSpinner}>⚡</div>
+          <div style={{ fontSize: 36, animation: 'spin 1s linear infinite' }}>⚡</div>
           <div style={S.loadingText}>Scanning the waiver wire…</div>
         </div>
       )}
@@ -178,16 +227,62 @@ function WaiverPage() {
       {/* Content */}
       {!loading && !error && players.length > 0 && (
         <>
-          {/* AI Recommendations — premium */}
+          {/* Mode Toggle */}
+          <div style={S.modeWrap}>
+            <div style={S.modeToggle}>
+              <button
+                style={{ ...S.modeBtn, ...(mode === 'all' ? S.modeBtnActive : {}) }}
+                onClick={() => setMode('all')}
+              >
+                All Players
+              </button>
+              <button
+                style={{ ...S.modeBtn, ...(mode === 'fit' ? S.modeBtnActiveFit : {}) }}
+                onClick={() => setMode('fit')}
+              >
+                For My Team
+                {rosterNeeds.length > 0 && (
+                  <span style={{
+                    ...S.needsBubble,
+                    background: highNeeds.length ? '#ef4444' : '#f97316',
+                  }}>
+                    {rosterNeeds.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Roster needs summary — shown in fit mode */}
+            {mode === 'fit' && rosterNeeds.length > 0 && (
+              <div style={S.needsPanel}>
+                {rosterNeeds.map((n, i) => (
+                  <div key={i} style={{ ...S.needRow, borderLeftColor: PRIORITY_COLOR[n.priority] }}>
+                    <PosBadge pos={n.pos} />
+                    <span style={S.needReason}>{n.reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {mode === 'fit' && rosterNeeds.length === 0 && (
+              <div style={S.noNeedsNote}>
+                ✅ Your roster looks healthy — no urgent needs detected.
+              </div>
+            )}
+          </div>
+
+          {/* AI Recommendations */}
           <div style={S.aiSection}>
             {!isPremium ? (
               <div style={S.aiLocked} onClick={() => router.push('/pricing')}>
-                🤖 <strong>AI Waiver Picks</strong> — get 3 AI-ranked recommendations with reasoning ·{' '}
+                🤖 <strong>AI Waiver Picks</strong> — 3 AI-ranked picks with reasoning ·{' '}
                 <span style={{ textDecoration: 'underline' }}>Upgrade to unlock</span>
               </div>
             ) : aiRecs ? (
-              <div style={S.aiCard}>
-                <div style={S.aiCardHeader}>🤖 AI WAIVER PICKS THIS WEEK</div>
+              <div style={{ ...S.aiCard, animation: 'fadeIn 0.3s ease' }}>
+                <div style={S.aiCardHeader}>
+                  🤖 AI PICKS — {aiMode === 'fit' ? 'FOR YOUR TEAM' : 'TOP VALUE'}
+                </div>
                 {aiRecs.picks?.map((pick, i) => (
                   <div key={i} style={S.aiPickRow}>
                     <span style={S.aiPickNum}>#{i + 1}</span>
@@ -197,6 +292,9 @@ function WaiverPage() {
                       <span style={S.aiPickTeam}>{pick.team}</span>
                       <span style={S.aiPickReason}>{pick.reason}</span>
                     </div>
+                    {needPositions.has(pick.position) && (
+                      <span style={S.fitBadge}>NEED</span>
+                    )}
                   </div>
                 ))}
                 {aiRecs.insight && (
@@ -207,11 +305,17 @@ function WaiverPage() {
             ) : (
               <button style={S.aiAskBtn} onClick={fetchAiRecs} disabled={aiLoading}>
                 {aiLoading
-                  ? '🤖 Analyzing waiver wire…'
-                  : '🤖 Get AI Waiver Picks for This Week'}
+                  ? '🤖 Analyzing your roster…'
+                  : mode === 'fit'
+                    ? '🤖 Get AI Picks for My Team'
+                    : '🤖 Get AI Waiver Picks This Week'}
               </button>
             )}
-            {aiError && <div style={S.aiError}>{aiError} <span style={S.aiRetry} onClick={fetchAiRecs}>Retry</span></div>}
+            {aiError && (
+              <div style={S.aiError}>{aiError}{' '}
+                <span style={S.aiRetry} onClick={fetchAiRecs}>Retry</span>
+              </div>
+            )}
           </div>
 
           {/* Filters */}
@@ -226,10 +330,18 @@ function WaiverPage() {
               {POSITIONS.map(pos => (
                 <button
                   key={pos}
-                  style={{ ...S.posBtn, ...(posFilter === pos ? S.posBtnActive : {}) }}
+                  style={{
+                    ...S.posBtn,
+                    ...(posFilter === pos ? S.posBtnActive : {}),
+                    ...(pos !== 'ALL' && needPositions.has(pos) && mode === 'fit'
+                      ? S.posBtnNeed : {}),
+                  }}
                   onClick={() => setPosFilter(pos)}
                 >
                   {pos}
+                  {pos !== 'ALL' && needPositions.has(pos) && mode === 'fit' && (
+                    <span style={S.posDot} />
+                  )}
                 </button>
               ))}
             </div>
@@ -240,30 +352,52 @@ function WaiverPage() {
             {filtered.length === 0 && (
               <div style={S.emptyState}>No players match that filter.</div>
             )}
-            {filtered.map((p, i) => (
-              <div key={p.playerKey || i} style={S.playerCard}>
-                <div style={S.playerRank}>#{i + 1}</div>
-                <div style={S.playerInfo}>
-                  <div style={S.playerTopRow}>
-                    <PosBadge pos={p.position} />
-                    <span style={S.playerName}>{p.name}</span>
-                    {p.injuryNote && (
-                      <span style={S.injuryBadge}>{p.injuryNote.toUpperCase()}</span>
+            {filtered.map((p, i) => {
+              const isNeeded = mode === 'fit' && needPositions.has(p.position);
+              const needInfo = isNeeded ? rosterNeeds.find(n => n.pos === p.position) : null;
+              return (
+                <div
+                  key={p.playerKey || i}
+                  style={{
+                    ...S.playerCard,
+                    ...(isNeeded ? S.playerCardNeeded : {}),
+                    borderLeftColor: isNeeded
+                      ? PRIORITY_COLOR[needInfo?.priority || 'medium']
+                      : '#1f1f1f',
+                  }}
+                >
+                  <div style={S.playerRank}>#{i + 1}</div>
+                  <div style={S.playerInfo}>
+                    <div style={S.playerTopRow}>
+                      <PosBadge pos={p.position} />
+                      <span style={S.playerName}>{p.name}</span>
+                      {p.injuryNote && (
+                        <span style={S.injuryBadge}>{p.injuryNote.toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div style={S.playerMeta}>
+                      {p.editorialTeam || '?'} ·{' '}
+                      {p.projectedPts > 0 ? `${p.projectedPts.toFixed(1)} proj pts` : 'Offseason'} ·{' '}
+                      {p.percentOwned > 0 ? `${p.percentOwned.toFixed(0)}% owned` : 'Unowned'} ·{' '}
+                      {p.status === 'FA' ? 'Free Agent' : 'Waivers'}
+                    </div>
+                    {/* Roster fit reason — only in fit mode */}
+                    {isNeeded && p.fitReason && (
+                      <div style={{
+                        ...S.fitReason,
+                        color: PRIORITY_COLOR[needInfo?.priority || 'medium'],
+                      }}>
+                        ↑ {p.fitReason}
+                      </div>
                     )}
                   </div>
-                  <div style={S.playerMeta}>
-                    {p.editorialTeam || '?'} ·{' '}
-                    {p.projectedPts > 0 ? `${p.projectedPts.toFixed(1)} proj pts` : 'Offseason'} ·{' '}
-                    {p.percentOwned > 0 ? `${p.percentOwned.toFixed(0)}% owned` : 'Unowned'} ·{' '}
-                    {p.status === 'FA' ? 'Free Agent' : 'Waivers'}
+                  <div style={S.scoreChip}>
+                    <div style={S.scoreNum}>{p.score}</div>
+                    <div style={S.scoreLabel}>score</div>
                   </div>
                 </div>
-                <div style={S.scoreChip}>
-                  <div style={S.scoreNum}>{p.score}</div>
-                  <div style={S.scoreLabel}>score</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -271,16 +405,16 @@ function WaiverPage() {
       {/* Empty — offseason */}
       {!loading && !error && players.length === 0 && (
         <div style={S.emptyWrap}>
-          <div style={S.emptyIcon}>📋</div>
+          <div style={{ fontSize: 40 }}>📋</div>
           <div style={S.emptyTitle}>Wire's quiet right now</div>
           <div style={S.emptySub}>Check back once the NFL season kicks off — we'll rank every available player for you.</div>
         </div>
       )}
-
     </div>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   page: {
     minHeight: '100vh', background: '#0a0a0a', color: '#fff',
@@ -298,16 +432,15 @@ const S = {
     color: '#71717a', borderRadius: 6, padding: '4px 10px',
     fontSize: 16, cursor: 'pointer',
   },
-  logo:         { fontSize: 20 },
-  headerTitle:  { fontSize: 17, fontWeight: 700 },
-  playerCount:  { fontSize: 12, color: '#52525b', fontWeight: 600 },
+  logo:        { fontSize: 20 },
+  headerTitle: { fontSize: 17, fontWeight: 700 },
+  playerCount: { fontSize: 12, color: '#52525b', fontWeight: 600 },
 
   loadingWrap: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', padding: '80px 20px', gap: 12,
   },
-  loadingSpinner: { fontSize: 36, animation: 'spin 1s linear infinite' },
-  loadingText:    { fontSize: 14, color: '#52525b' },
+  loadingText: { fontSize: 14, color: '#52525b' },
 
   errorCard: {
     margin: 20, background: '#1a0000', border: '1px solid #7f1d1d',
@@ -321,6 +454,39 @@ const S = {
     fontWeight: 700, cursor: 'pointer',
   },
 
+  // Mode toggle
+  modeWrap:   { padding: '12px 16px', borderBottom: '1px solid #1a1a1a' },
+  modeToggle: {
+    display: 'flex', background: '#141414', border: '1px solid #2a2a2a',
+    borderRadius: 10, padding: 3, marginBottom: 10,
+  },
+  modeBtn: {
+    flex: 1, background: 'transparent', border: 'none',
+    borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+    color: '#52525b', cursor: 'pointer', position: 'relative',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  modeBtnActive:    { background: '#1f1f1f', color: '#fff' },
+  modeBtnActiveFit: { background: '#1a0800', color: '#f97316' },
+  needsBubble: {
+    fontSize: 10, fontWeight: 800, color: '#fff', borderRadius: '50%',
+    width: 18, height: 18, display: 'inline-flex', alignItems: 'center',
+    justifyContent: 'center', flexShrink: 0,
+  },
+
+  needsPanel: { display: 'flex', flexDirection: 'column', gap: 6 },
+  needRow: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#110a00', borderLeft: '3px solid',
+    borderRadius: '0 8px 8px 0', padding: '7px 10px',
+  },
+  needReason: { fontSize: 12, color: '#d4d4d8', lineHeight: 1.4 },
+  noNeedsNote: {
+    fontSize: 12, color: '#52525b', padding: '8px 0',
+    textAlign: 'center',
+  },
+
+  // AI
   aiSection: { padding: '12px 16px', borderBottom: '1px solid #1a1a1a' },
   aiLocked: {
     background: '#1a0a00', border: '1px solid #7c2d12', borderRadius: 10,
@@ -333,64 +499,76 @@ const S = {
     color: '#f97316', cursor: 'pointer', textAlign: 'left',
   },
   aiCard: {
-    background: '#0d1117', border: '1px solid #f97316',
-    borderRadius: 12, padding: '14px',
+    background: '#0d1117', border: '1px solid #f97316', borderRadius: 12, padding: 14,
   },
   aiCardHeader: {
-    fontSize: 10, fontWeight: 800, color: '#f97316',
-    letterSpacing: '0.8px', marginBottom: 12,
+    fontSize: 10, fontWeight: 800, color: '#f97316', letterSpacing: '0.8px', marginBottom: 12,
   },
   aiPickRow: {
     display: 'flex', alignItems: 'flex-start', gap: 8,
-    paddingBottom: 10, marginBottom: 10,
-    borderBottom: '1px solid #1a1a1a',
+    paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #1a1a1a',
   },
   aiPickNum:    { fontSize: 11, color: '#52525b', fontWeight: 800, width: 20, paddingTop: 2 },
   aiPickInfo:   { flex: 1, display: 'flex', flexDirection: 'column', gap: 2 },
   aiPickName:   { fontSize: 14, fontWeight: 800, color: '#fff' },
   aiPickTeam:   { fontSize: 11, color: '#71717a' },
   aiPickReason: { fontSize: 12, color: '#d4d4d8', lineHeight: 1.45, marginTop: 2 },
+  fitBadge: {
+    fontSize: 9, fontWeight: 800, color: '#f97316', border: '1px solid #f9731644',
+    borderRadius: 4, padding: '2px 5px', flexShrink: 0, alignSelf: 'flex-start',
+  },
   aiInsight: {
     background: '#18181b', borderRadius: 8, padding: '9px 12px',
     fontSize: 12, color: '#a1a1aa', lineHeight: 1.45, marginTop: 8,
   },
   aiRefreshBtn: {
-    background: 'transparent', border: 'none',
-    fontSize: 11, color: '#52525b', cursor: 'pointer',
-    padding: '8px 0 0', display: 'block',
+    background: 'transparent', border: 'none', fontSize: 11,
+    color: '#52525b', cursor: 'pointer', padding: '8px 0 0', display: 'block',
   },
   aiError: { fontSize: 12, color: '#f87171', marginTop: 8 },
   aiRetry: { color: '#f97316', cursor: 'pointer', marginLeft: 6 },
 
+  // Filters
   filterBar: { padding: '12px 16px', borderBottom: '1px solid #1a1a1a' },
   searchInput: {
     width: '100%', background: '#141414', border: '1px solid #2a2a2a',
-    borderRadius: 10, padding: '10px 14px', fontSize: 14,
-    color: '#fff', outline: 'none', marginBottom: 10, boxSizing: 'border-box',
+    borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#fff',
+    outline: 'none', marginBottom: 10, boxSizing: 'border-box',
   },
   posFilters: { display: 'flex', gap: 6, flexWrap: 'wrap' },
   posBtn: {
     background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12,
-    cursor: 'pointer', fontWeight: 700,
+    borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+    fontWeight: 700, position: 'relative',
   },
   posBtnActive: { background: '#f97316', color: '#fff', borderColor: '#f97316' },
+  posBtnNeed:   { borderColor: '#f97316', color: '#f97316' },
+  posDot: {
+    position: 'absolute', top: -3, right: -3, width: 7, height: 7,
+    borderRadius: '50%', background: '#ef4444',
+  },
 
+  // Player list
   list: { padding: '10px 16px 40px' },
   playerCard: {
     display: 'flex', alignItems: 'center', gap: 10,
     background: '#141414', borderRadius: 10, padding: '12px 14px',
-    marginBottom: 8, border: '1px solid #1f1f1f',
+    marginBottom: 8, border: '1px solid', borderColor: '#1f1f1f',
+    borderLeft: '3px solid',
+  },
+  playerCardNeeded: {
+    background: '#110a00',
   },
   playerRank:   { fontSize: 11, color: '#3f3f46', fontWeight: 700, minWidth: 24 },
   playerInfo:   { flex: 1 },
-  playerTopRow: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 },
+  playerTopRow: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4, flexWrap: 'wrap' },
   playerName:   { fontSize: 14, fontWeight: 700 },
   injuryBadge: {
     fontSize: 9, fontWeight: 800, padding: '2px 5px',
     borderRadius: 3, background: '#7f1d1d', color: '#fca5a5',
   },
-  playerMeta:   { fontSize: 11, color: '#52525b', lineHeight: 1.5 },
+  playerMeta: { fontSize: 11, color: '#52525b', lineHeight: 1.5 },
+  fitReason:  { fontSize: 11, fontWeight: 700, marginTop: 4 },
   scoreChip: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     background: '#1f1f1f', borderRadius: 8, padding: '6px 10px', minWidth: 48,
@@ -402,7 +580,6 @@ const S = {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', padding: '80px 20px', gap: 12, textAlign: 'center',
   },
-  emptyIcon:  { fontSize: 40 },
   emptyTitle: { fontSize: 18, fontWeight: 700 },
   emptySub:   { fontSize: 14, color: '#52525b', maxWidth: 300, lineHeight: 1.5 },
   emptyState: { color: '#3f3f46', fontSize: 13, padding: '30px 0', textAlign: 'center' },

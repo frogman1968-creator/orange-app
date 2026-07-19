@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return res.status(401).json({ error: 'Invalid session' });
 
-  const { players = [], roster = [], leagueKey } = req.body;
+  const { players = [], roster = [], leagueKey, mode = 'all', rosterNeeds = [] } = req.body;
   if (!players.length) return res.status(400).json({ error: 'No players provided' });
 
   // Pull cached league settings
@@ -69,9 +69,15 @@ export default async function handler(req, res) {
     ? `\nLeague scoring: ${leagueCtx.scoring_summary}`
     : '';
   const rosterNeedsText = buildRosterNeeds(leagueCtx?.roster_positions, roster);
-  const needsContext = rosterNeedsText
-    ? `\nRoster needs: ${rosterNeedsText}`
+  // "For My Team" mode — surface actual roster gaps from injury/thin depth analysis
+  const fitNeedsText = rosterNeeds.length
+    ? `\nROSTER GAPS (prioritize these): ${rosterNeeds.map(n => n.reason).join(' | ')}`
     : '';
+  const needsContext = fitNeedsText || (rosterNeedsText ? `\nRoster needs: ${rosterNeedsText}` : '');
+
+  const modeInstruction = mode === 'fit'
+    ? '\nMODE: "For My Team" — your 3 picks MUST address the roster gaps listed above. Only recommend players at those positions unless no good option exists there.'
+    : '\nMODE: "All Players" — rank by best overall value for this week regardless of roster construction.';
 
   const rosterText = roster.length
     ? roster.map(p => `- ${p.name} (${p.position}, ${p.editorialTeam || 'FA'})`).join('\n')
@@ -84,7 +90,7 @@ export default async function handler(req, res) {
     ` | Orange Score: ${p.score}`
   ).join('\n');
 
-  const prompt = `You are an expert fantasy football analyst. A manager needs waiver wire advice for this week.${scoringContext}${needsContext}
+  const prompt = `You are an expert fantasy football analyst. A manager needs waiver wire advice for this week.${scoringContext}${needsContext}${modeInstruction}
 
 Their current roster:
 ${rosterText}
