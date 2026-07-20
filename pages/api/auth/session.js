@@ -33,18 +33,44 @@ export default async function handler(req, res) {
       return res.json({ user: null, subscription: null, isPremium: false });
     }
 
-    // Check subscription in Supabase
+    // Check subscription in Supabase — user_id first (most reliable), email as fallback
     const adminSupabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: sub } = await adminSupabase
+    let sub = null;
+
+    // Primary: match by user_id
+    const { data: subById } = await adminSupabase
       .from('subscriptions')
-      .select('plan, status')
-      .eq('email', user.email)
+      .select('plan, status, user_id, email')
+      .eq('user_id', user.id)
       .eq('status', 'active')
-      .single();
+      .maybeSingle();
+
+    if (subById) {
+      sub = subById;
+    } else {
+      // Fallback: match by email (handles cases where user_id wasn't captured at checkout)
+      const { data: subByEmail } = await adminSupabase
+        .from('subscriptions')
+        .select('plan, status, user_id, email')
+        .eq('email', user.email)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (subByEmail) {
+        sub = subByEmail;
+        // Backfill user_id on the subscription row so future lookups use the faster path
+        if (!subByEmail.user_id) {
+          await adminSupabase
+            .from('subscriptions')
+            .update({ user_id: user.id })
+            .eq('email', user.email);
+        }
+      }
+    }
 
     const isPremium = !!sub;
 
