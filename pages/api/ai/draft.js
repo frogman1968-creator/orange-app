@@ -151,6 +151,12 @@ ${availableText}
 
 Choose the single best pick RIGHT NOW given the league's specific roster requirements and what positions are still needed. If the manager is running low on a required position (e.g., needs 3 WRs but only has 1), weight that urgency heavily. Factor in ADP scarcity — if a position runs thin, draft ahead of the run.
 
+CRITICAL POSITIONAL STRATEGY — standard non-superflex leagues:
+- NEVER recommend a QB before round 3 (pick 25+ in a 12-team league). QBs have positional scarcity far lower than RBs and WRs. Drafting a QB in round 1 or 2 is a well-known losing strategy in standard leagues.
+- Rounds 1-2: RBs and elite WRs only. RB depth dries up fast — prioritize.
+- Round 3+: QB becomes viable only if the elite tier (Allen, Jackson, Hurts) is still available AND your RB/WR core is solid.
+- K and DEF: never before the final 2 rounds regardless of ADP shown.
+
 Respond in this exact JSON format — nothing else:
 {
   "pick": {
