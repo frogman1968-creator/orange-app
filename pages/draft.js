@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { DRAFT_POOL } from '../lib/sampleData';
+import { DRAFT_POOL } from '../lib/sampleData'; // fallback only
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
 import { useLeague } from '../lib/LeagueContext';
@@ -146,7 +146,8 @@ function DraftCompanion() {
 
   // Draft state
   const [myRoster, setMyRoster] = useState([]);
-  const [available, setAvailable] = useState(DRAFT_POOL);
+  const [available, setAvailable] = useState(DRAFT_POOL); // starts with fallback, replaced by live fetch
+  const [adpSource, setAdpSource] = useState('sample'); // 'sample' | 'live'
   const [currentOverallPick, setCurrentOverallPick] = useState(1);
   const [opponentCounts, setOpponentCounts] = useState({ QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 });
 
@@ -171,6 +172,24 @@ function DraftCompanion() {
   const leagueKey = selected?.leagueKey;
 
   useEffect(() => setMounted(true), []);
+
+  // Fetch live ADP from Fantasy Football Calculator on mount
+  useEffect(() => {
+    async function loadLiveAdp() {
+      try {
+        const res = await fetch('/api/adp');
+        if (!res.ok) return; // silently fall back to sampleData
+        const data = await res.json();
+        if (data.players?.length > 10) {
+          setAvailable(data.players.sort((a, b) => a.adp - b.adp));
+          setAdpSource('live');
+        }
+      } catch {
+        // stay on sampleData fallback
+      }
+    }
+    loadLiveAdp();
+  }, []);
 
   // Fetch league settings when selected league changes
   useEffect(() => {
