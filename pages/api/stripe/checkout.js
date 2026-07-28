@@ -4,8 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PRICES = {
-  monthly: 'price_1TlWqQPsEaep6taMVSjiktWo',
-  season:  'price_1TlWp4PsEaep6taMXgtBhgJB',
+  monthly: 'price_1TtJ42PsEaep6taM4KR1bwMF',
+  season:  'price_1TtJ1yPsEaep6taMDlqC7cqa',
 };
 
 export default async function handler(req, res) {
