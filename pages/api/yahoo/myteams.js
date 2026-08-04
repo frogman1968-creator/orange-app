@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       const text = await resp.text();
       console.error('Yahoo myteams error:', text);
       await supabase.from('yahoo_tokens').update({ last_error: text.slice(0, 1000) }).eq('user_id', user.id);
-      return res.status(502).json({ error: 'Failed to fetch teams from Yahoo', yahoo_error: text.slice(0, 500) });
+      return res.status(200).json({ teams: [], connected: true, error: 'Yahoo API error - try again later' });
     }
 
     const data = await resp.json();
