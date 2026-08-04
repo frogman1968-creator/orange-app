@@ -42,23 +42,25 @@ export default async function handler(req, res) {
     let sub = null;
 
     // Primary: match by user_id
-    const { data: subById } = await adminSupabase
-      .from('subscriptions')
-      .select('plan, status, user_id, email')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .maybeSingle();
+    const { data: subByIdRows } = await adminSupabase
+        .from('subscriptions')
+        .select('plan, status, user_id, email')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .limit(1);
+      const subById = subByIdRows?.[0] || null;
 
     if (subById) {
       sub = subById;
     } else {
       // Fallback: match by email (handles cases where user_id wasn't captured at checkout)
-      const { data: subByEmail } = await adminSupabase
-        .from('subscriptions')
-        .select('plan, status, user_id, email')
-        .eq('email', user.email)
-        .eq('status', 'active')
-        .maybeSingle();
+      const { data: subByEmailRows } = await adminSupabase
+          .from('subscriptions')
+          .select('plan, status, user_id, email')
+          .eq('email', user.email)
+          .eq('status', 'active')
+          .limit(1);
+        const subByEmail = subByEmailRows?.[0] || null;
 
       if (subByEmail) {
         sub = subByEmail;

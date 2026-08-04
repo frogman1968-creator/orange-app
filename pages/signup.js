@@ -66,7 +66,7 @@ export default function Signup() {
       <div style={styles.card}>
         <div style={styles.logo}>🟠</div>
         <div style={styles.title}>Create your account</div>
-        <div style={styles.sub}>14-day free trial · No credit card required</div>
+        <div style={styles.sub}>7-day free trial · No credit card required</div>
 
         <form onSubmit={handleSignup} style={styles.form}>
           <label style={styles.label}>Email</label>
