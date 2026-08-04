@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   const { code, error, state } = req.query;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://orange-app-sigma.vercel.app';
+  const appUrl = 'https://www.orangeff.app';
 
   if (error || !code) {
     return res.redirect(`${appUrl}/connect?error=cancelled`);
