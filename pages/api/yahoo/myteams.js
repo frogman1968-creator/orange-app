@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     if (!resp.ok) {
       const text = await resp.text();
       console.error('Yahoo myteams error:', text);
-      return res.status(502).json({ error: 'Failed to fetch teams from Yahoo' });
+      return res.status(502).json({ error: 'Failed to fetch teams from Yahoo', yahoo_error: text.slice(0, 500) });
     }
 
     const data = await resp.json();
