@@ -95,7 +95,7 @@ export default function Home() {
         </div>
 
         <div className={`anim-item anim-5 ${visible ? 'anim-in' : ''}`}>
-          <p className="disclaimer">14-day free trial · No credit card required</p>
+          <p className="disclaimer">7-day free trial · No credit card required</p>
         </div>
 
       </div>
