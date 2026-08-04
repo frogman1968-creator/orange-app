@@ -606,7 +606,7 @@ function DraftCompanion() {
         <div style={styles.rosterPanel}>
           <div style={styles.needSection}>
             <div style={styles.sectionLabel}>Position Needs</div>
-            {Object.entries(ROSTER_REQUIREMENTS).map(([pos, needed]) => {
+            {Object.entries(rosterRequirements).map(([pos, needed]) => {
               const have = counts[pos] || 0;
               const pct = Math.min(1, have / needed);
               return (
