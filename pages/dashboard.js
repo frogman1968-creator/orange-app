@@ -86,11 +86,37 @@ function Dashboard() {
 
       {/* Connect / Error Banner */}
       {notConnected && (
-        <div style={{ ...styles.banner, borderColor: '#f97316', color: '#f97316' }}>
-          🔗 Connect your Yahoo account to see live data —{' '}
-          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => router.push('/connect')}>
-            Connect now
-          </span>
+        <div style={{
+          margin: '16px',
+          padding: '28px 20px',
+          background: '#1a0a00',
+          border: '2px solid #f97316',
+          borderRadius: '14px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏈</div>
+          <div style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>
+            Connect Your Yahoo Account
+          </div>
+          <div style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '20px', lineHeight: '1.5' }}>
+            Link Yahoo Fantasy to unlock your live roster, matchups, and AI recommendations.
+          </div>
+          <button
+            onClick={() => router.push('/connect')}
+            style={{
+              background: '#f97316',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '14px 0',
+              fontSize: '16px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+          >
+            Connect Yahoo Fantasy →
+          </button>
         </div>
       )}
       {dataError && (
