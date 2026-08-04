@@ -205,17 +205,16 @@ function Dashboard() {
         <div style={styles.breakdownIcon}>📋</div>
       </div>
 
-      {/* Draft Report Card */}
+      {/* Draft Report Card — Coming Soon */}
       <div
-        style={styles.draftGradeCard}
-        onClick={() => router.push('/draft-grades')}
+        style={{ ...styles.draftGradeCard, opacity: 0.5, cursor: 'default' }}
       >
         <div style={styles.breakdownLeft}>
-          <div style={styles.draftGradeLabel}>DRAFT REPORT CARD</div>
-          <div style={styles.breakdownTitle}>How Does Your Team Stack Up? →</div>
-          <div style={styles.breakdownSub}>Your squad graded against every team in your league. No ADP. Just results.</div>
+          <div style={styles.draftGradeLabel}>DRAFT REPORT CARD · COMING SOON</div>
+          <div style={styles.breakdownTitle}>How Does Your Team Stack Up?</div>
+          <div style={styles.breakdownSub}>Launching soon — your squad graded against every team in the league. No ADP. Just results.</div>
         </div>
-        <div style={styles.draftGradeIcon}>🏆</div>
+        <div style={styles.draftGradeIcon}>🔒</div>
       </div>
 
       {/* Mock Draft Simulator */}
