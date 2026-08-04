@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
   try {
     const resp = await fetch(
-      `${BASE}/users;use_login=1/games;game_codes=nfl/teams?format=json`,
+      `${BASE}/users;use_login=1/games?format=json`,
       { headers: { Authorization: `Bearer ${access_token}`, Accept: 'application/json' } }
     );
 
