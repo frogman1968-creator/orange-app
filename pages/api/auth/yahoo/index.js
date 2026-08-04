@@ -26,7 +26,7 @@ export default function handler(req, res) {
     client_id:     clientId,
     redirect_uri:  redirectUri,
     response_type: 'code',
-    scope:         'fspt-r',
+    scope:         'openid fspt-r',
     // state carries the Supabase token through the OAuth round-trip
     state:         supabaseToken,
   });
