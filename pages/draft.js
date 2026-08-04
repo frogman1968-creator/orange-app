@@ -218,7 +218,6 @@ function DraftCompanion() {
     }
     loadLeagueSettings();
   }, [leagueLoading, selected?.leagueKey]);
-  if (!mounted) return <PageSkeleton />;
 
   const myPickSlots = useMemo(
     () => getSnakePickSlots(draftPosition, numTeams, totalRounds),
@@ -317,6 +316,8 @@ function DraftCompanion() {
     const matchSearch = search === '' || p.name.toLowerCase().includes(search.toLowerCase());
     return matchPos && matchSearch;
   });
+
+  if (!mounted) return <PageSkeleton />;
 
   // ── Setup Screen ─────────────────────────────────────────────────────────────
 
