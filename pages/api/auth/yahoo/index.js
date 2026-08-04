@@ -12,7 +12,7 @@
 export default function handler(req, res) {
   const clientId    = process.env.NEXT_PUBLIC_YAHOO_CLIENT_ID;
   const appUrl      = process.env.NEXT_PUBLIC_APP_URL || 'https://orange-app-sigma.vercel.app';
-  const redirectUri = `${appUrl}/api/auth/yahoo/callback`;
+  const redirectUri = 'https://www.orangeff.app/api/auth/yahoo/callback';
 
   if (!clientId) {
     return res.status(503).json({ error: 'Yahoo Client ID not configured.' });
