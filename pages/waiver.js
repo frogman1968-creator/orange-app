@@ -74,7 +74,6 @@ function WaiverPage() {
   const leagueKey = selected?.leagueKey;
 
   useEffect(() => setMounted(true), []);
-  if (!mounted) return <PageSkeleton />;
 
   useEffect(() => {
     if (leagueLoading) return;
@@ -181,6 +180,8 @@ function WaiverPage() {
       return matchPos && matchSearch;
     });
   }, [sortedPlayers, posFilter, search]);
+
+  if (!mounted) return <PageSkeleton />;
 
   const highNeeds = rosterNeeds.filter(n => n.priority === 'high');
   const medNeeds  = rosterNeeds.filter(n => n.priority === 'medium');

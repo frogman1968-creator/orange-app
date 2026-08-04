@@ -61,11 +61,11 @@ function Account() {
               <div style={styles.trialBarTrack}>
                 <div style={{
                   ...styles.trialBarFill,
-                  width: `${(daysLeft / 14) * 100}%`,
+                  width: `${(daysLeft / 7) * 100}%`,
                   background: daysLeft > 7 ? '#22c55e' : daysLeft > 3 ? '#f59e0b' : '#ef4444',
                 }} />
               </div>
-              <div style={styles.trialBarLabel}>{daysLeft} of 14 days remaining</div>
+              <div style={styles.trialBarLabel}>{daysLeft} of 7 days remaining</div>
             </div>
           )}
 

@@ -549,8 +549,8 @@ function CompleteScreen({ rosters, config, board, onReset, router }) {
         <button style={S.completeBtn} onClick={onReset}>
           Run Another Mock Draft
         </button>
-        <button style={{ ...S.completeBtn, background: '#1a1a2e', color: '#fff' }} onClick={() => router.push('/draft-grades')}>
-          Grade My Real Draft →
+        <button style={{ ...S.completeBtn, background: '#1a1a2e', color: '#555', cursor: 'default' }}>
+          Draft Report Card — Coming Soon
         </button>
         <button style={{ ...S.completeBtn, background: 'none', color: '#555' }} onClick={() => router.push('/dashboard')}>
           Back to Dashboard

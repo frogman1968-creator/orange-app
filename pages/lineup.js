@@ -518,6 +518,8 @@ function LineupOptimizer() {
         <button style={styles.navBtn} onClick={() => router.push('/draft')}>🎯 Draft</button>
         <button style={{ ...styles.navBtn, ...styles.navBtnActive }}>📊 Lineup</button>
         <button style={styles.navBtn} onClick={() => router.push('/dashboard')}>🏠 Home</button>
+        <button style={styles.navBtn} onClick={() => router.push('/waiver')}>🔄 Wire</button>
+        <button style={styles.navBtn} onClick={() => router.push('/trash')}>🔥 Trash</button>
         <button style={styles.navBtn} onClick={() => router.push('/account')}>👤 Account</button>
       </div>
     </div>
