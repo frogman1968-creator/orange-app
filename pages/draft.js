@@ -1,14 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { DRAFT_POOL } from '../lib/sampleData'; // fallback only
+import { DRAFT_POOL } from '../lib/sampleData';
 import { useTrial } from '../lib/useTrial';
 import { withAuth } from '../lib/withAuth';
 import { useLeague } from '../lib/LeagueContext';
 
-// Default requirements used until real league settings load
 const DEFAULT_REQUIREMENTS = { QB: 2, RB: 4, WR: 4, TE: 2, K: 1, DEF: 1 };
 
-/** Convert Yahoo rosterPositions array to a { QB: N, RB: N, ... } requirements map */
 function buildRequirements(rosterPositions) {
   if (!rosterPositions?.length) return DEFAULT_REQUIREMENTS;
   const reqs = {};
@@ -18,14 +16,10 @@ function buildRequirements(rosterPositions) {
     if (!isFlex) {
       reqs[slot.position] = (reqs[slot.position] || 0) + slot.count;
     }
-    // FLEX slots: distribute across eligible positions for urgency math
-    // Each flex slot adds 1 to the most-needed eligible position's urgency
-    // This is handled implicitly by calcUrgency using total needs
   }
   return Object.keys(reqs).length ? reqs : DEFAULT_REQUIREMENTS;
 }
 
-/** Build human-readable roster structure string for AI */
 function buildRosterStructureText(rosterPositions) {
   if (!rosterPositions?.length) return null;
   return rosterPositions
@@ -40,8 +34,6 @@ function buildRosterStructureText(rosterPositions) {
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 const POS_DEMAND = { QB: 0.08, RB: 0.30, WR: 0.32, TE: 0.10, K: 0.05, DEF: 0.05 };
 
-// ─── Snake Draft Math ─────────────────────────────────────────────────────────
-
 function getSnakePickSlots(position, numTeams, totalRounds) {
   const slots = [];
   for (let r = 0; r < totalRounds; r++) {
@@ -55,8 +47,6 @@ function getSnakePickSlots(position, numTeams, totalRounds) {
 function getNextMyPick(currentPick, myPickSlots) {
   return myPickSlots.find(s => s >= currentPick) || null;
 }
-
-// ─── Roster / Position Helpers ────────────────────────────────────────────────
 
 function countPositions(roster) {
   const counts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
@@ -82,24 +72,16 @@ function missingPositions(counts, requirements) {
     .map(([pos]) => pos);
 }
 
-// ─── Survival Probability ─────────────────────────────────────────────────────
-
 function calcSurvival(player, currentPick, nextMyPick, available) {
   if (!nextMyPick) return 1;
   const picksUntilMine = nextMyPick - currentPick;
   if (picksUntilMine <= 0) return 1;
-
-  const playersAtPos = available.filter(p => p.position === player.position).length;
   const demand = POS_DEMAND[player.position] || 0.1;
   const expectedTaken = picksUntilMine * demand;
-
-  // Rank of this player among available at same position
   const posPlayers = available
     .filter(p => p.position === player.position)
-    .sort((a, b) => b.projectedPts - a.projectedPts);
+    .sort((a, b) => a.adp - b.adp);
   const rank = posPlayers.findIndex(p => p.id === player.id) + 1;
-
-  // Probability that fewer than `rank` players at this pos get taken
   const prob = Math.max(0, Math.min(1, 1 - (expectedTaken / Math.max(1, rank))));
   return prob;
 }
@@ -110,15 +92,12 @@ function survivalLabel(prob) {
   return { text: `${Math.round(prob * 100)}% — take him now`, color: '#ef4444' };
 }
 
-// ─── Pattern Suggestion ───────────────────────────────────────────────────────
-
 function getPatternSuggestion(roster, available, counts, requirements) {
   const reqs = requirements || DEFAULT_REQUIREMENTS;
   if (roster.length < 2) return null;
   const recent = roster.slice(-2).map(p => p.position);
   if (recent[0] !== recent[1]) return null;
   const heavyPos = recent[0];
-  // Find most urgent unfilled position that differs from the heavy position
   const urgentPos = Object.entries(reqs)
     .filter(([pos]) => pos !== heavyPos && (counts[pos] || 0) < (reqs[pos] || 1))
     .sort(([, aN], [, bN]) => bN - aN)[0]?.[0];
@@ -127,45 +106,38 @@ function getPatternSuggestion(roster, available, counts, requirements) {
   if ((counts[urgentPos] || 0) >= needed) return null;
   const top3 = available
     .filter(p => p.position === urgentPos)
-    .sort((a, b) => b.projectedPts - a.projectedPts)
+    .sort((a, b) => a.adp - b.adp)
     .slice(0, 3);
   if (top3.length === 0) return null;
   return { heavyPos, suggestPos: urgentPos, players: top3 };
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-
 function DraftCompanion() {
   const router = useRouter();
 
-  // Setup
   const [setupDone, setSetupDone] = useState(false);
   const [numTeams, setNumTeams] = useState(8);
   const [draftPosition, setDraftPosition] = useState(1);
   const [totalRounds, setTotalRounds] = useState(15);
 
-  // Draft state
   const [myRoster, setMyRoster] = useState([]);
-  const [available, setAvailable] = useState(DRAFT_POOL); // starts with fallback, replaced by live fetch
-  const [adpSource, setAdpSource] = useState('sample'); // 'sample' | 'live'
+  const [available, setAvailable] = useState(DRAFT_POOL);
+  const [adpSource, setAdpSource] = useState('sample');
   const [currentOverallPick, setCurrentOverallPick] = useState(1);
   const [opponentCounts, setOpponentCounts] = useState({ QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 });
 
-  // UI
   const [posFilter, setPosFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [panel, setPanel] = useState('picks');
   const [mounted, setMounted] = useState(false);
 
-  // AI state
   const [aiRec, setAiRec] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [aiPickUsed, setAiPickUsed] = useState(null);
 
-  // League settings (loaded from Yahoo via Supabase cache)
   const [rosterRequirements, setRosterRequirements] = useState(DEFAULT_REQUIREMENTS);
-  const [rosterPositions, setRosterPositions]   = useState(null);
+  const [rosterPositions, setRosterPositions] = useState(null);
 
   const { isPremium } = useTrial();
   const { selected, loading: leagueLoading } = useLeague();
@@ -173,12 +145,11 @@ function DraftCompanion() {
 
   useEffect(() => setMounted(true), []);
 
-  // Fetch live ADP from Fantasy Football Calculator on mount
   useEffect(() => {
     async function loadLiveAdp() {
       try {
         const res = await fetch('/api/adp');
-        if (!res.ok) return; // silently fall back to sampleData
+        if (!res.ok) return;
         const data = await res.json();
         if (data.players?.length > 10) {
           setAvailable(data.players.sort((a, b) => a.adp - b.adp));
@@ -191,7 +162,6 @@ function DraftCompanion() {
     loadLiveAdp();
   }, []);
 
-  // Fetch league settings when selected league changes
   useEffect(() => {
     if (leagueLoading || !selected) return;
     async function loadLeagueSettings() {
@@ -200,20 +170,18 @@ function DraftCompanion() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         const auth = { Authorization: `Bearer ${session.access_token}` };
-
         const settingsRes = await fetch(
           `/api/yahoo/settings?league_key=${encodeURIComponent(selected.leagueKey)}`,
           { headers: auth }
         );
         if (!settingsRes.ok) return;
         const settings = await settingsRes.json();
-
         if (settings.rosterPositions?.length) {
           setRosterPositions(settings.rosterPositions);
           setRosterRequirements(buildRequirements(settings.rosterPositions));
         }
       } catch {
-        // Non-fatal — falls back to DEFAULT_REQUIREMENTS
+        // Non-fatal
       }
     }
     loadLeagueSettings();
@@ -244,7 +212,6 @@ function DraftCompanion() {
   function logOpponentPick(position) {
     setOpponentCounts(prev => ({ ...prev, [position]: (prev[position] || 0) + 1 }));
     setAvailable(prev => {
-      // Remove the top available player at that position (best guess)
       const idx = prev.findIndex(p => p.position === position);
       if (idx === -1) return prev;
       return prev.filter((_, i) => i !== idx);
@@ -306,9 +273,8 @@ function DraftCompanion() {
       const isNeed = posUrgency > 0.3;
       const isValuePick = p.adp > currentRound + 2;
       const survival = calcSurvival(p, currentOverallPick, nextMyPick, available);
-      const score = p.projectedPts + posUrgency * 8 + (isValuePick ? 5 : 0) + survival * 3;
-      return { ...p, isNeed, isValuePick, survival, score };
-    }).sort((a, b) => b.score - a.score);
+      return { ...p, isNeed, isValuePick, survival };
+    }).sort((a, b) => a.adp - b.adp);
   }, [available, urgency, currentRound, currentOverallPick, nextMyPick]);
 
   const filtered = scoredPlayers.filter(p => {
@@ -318,8 +284,6 @@ function DraftCompanion() {
   });
 
   if (!mounted) return <PageSkeleton />;
-
-  // ── Setup Screen ─────────────────────────────────────────────────────────────
 
   if (!setupDone) {
     return (
@@ -335,7 +299,6 @@ function DraftCompanion() {
           <div style={styles.setupCard}>
             <div style={styles.setupTitle}>Before we start</div>
             <div style={styles.setupSub}>Orange needs two things to calculate your pick slots and survival odds.</div>
-
             <div style={styles.setupField}>
               <label style={styles.setupLabel}>Number of teams in your league</label>
               <div style={styles.setupStepper}>
@@ -344,7 +307,6 @@ function DraftCompanion() {
                 <button style={styles.stepBtn} onClick={() => setNumTeams(n => Math.min(20, n + 1))}>+</button>
               </div>
             </div>
-
             <div style={styles.setupField}>
               <label style={styles.setupLabel}>Your draft position</label>
               <div style={styles.setupStepper}>
@@ -353,7 +315,6 @@ function DraftCompanion() {
                 <button style={styles.stepBtn} onClick={() => setDraftPosition(n => Math.min(numTeams, n + 1))}>+</button>
               </div>
             </div>
-
             <div style={styles.setupField}>
               <label style={styles.setupLabel}>Total rounds</label>
               <div style={styles.setupStepper}>
@@ -362,11 +323,9 @@ function DraftCompanion() {
                 <button style={styles.stepBtn} onClick={() => setTotalRounds(n => Math.min(25, n + 1))}>+</button>
               </div>
             </div>
-
             <div style={styles.setupPreview}>
               🎯 Your picks: {getSnakePickSlots(draftPosition, numTeams, totalRounds).slice(0, 5).join(', ')}...
             </div>
-
             <button style={styles.startBtn} onClick={() => setSetupDone(true)}>
               Start Draft →
             </button>
@@ -376,12 +335,8 @@ function DraftCompanion() {
     );
   }
 
-  // ── Draft Screen ──────────────────────────────────────────────────────────────
-
   return (
     <div style={styles.page}>
-
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <button style={styles.backBtn} onClick={() => router.push('/dashboard')}>←</button>
@@ -398,7 +353,6 @@ function DraftCompanion() {
         </div>
       </div>
 
-      {/* Turn indicator */}
       {!draftDone && (
         <div style={{ ...styles.turnBar, background: isMyTurn ? '#1a2e00' : '#0d0d0d', borderBottomColor: isMyTurn ? '#84cc16' : '#2a2a2a' }}>
           <span style={{ color: isMyTurn ? '#84cc16' : '#52525b', fontWeight: 700, fontSize: 13 }}>
@@ -410,7 +364,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* Opponent pick logger */}
       {!isMyTurn && !draftDone && (
         <div style={styles.logBar}>
           <div style={styles.logLabel}>What position did they take?</div>
@@ -425,7 +378,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* Alerts */}
       {missing.length > 0 && currentRound > Math.floor(totalRounds * 0.7) && (
         <div style={styles.alertBanner}>
           ⚠️ Still need: {missing.join(', ')} — don't leave the draft without them!
@@ -437,7 +389,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* Orange Suggests — premium only */}
       {!isPremium && isMyTurn && (
         <div style={styles.lockedBanner} onClick={() => router.push('/pricing')}>
           🔒 <strong>Orange Suggests</strong> — unlock expert pattern picks · <span style={{ textDecoration: 'underline' }}>Upgrade</span>
@@ -465,7 +416,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* AI Draft Autopilot */}
       {isMyTurn && !draftDone && (
         <div style={styles.aiSection}>
           {!isPremium ? (
@@ -499,7 +449,6 @@ function DraftCompanion() {
                     <span style={getPosBadge(aiRec.pick?.position)}>{aiRec.pick?.position}</span>
                     <span style={styles.aiPickName}>{aiRec.pick?.name}</span>
                     <span style={styles.aiPickTeam}>{aiRec.pick?.team}</span>
-                    {/* Draft this player directly if found in available list */}
                     {(() => {
                       const match = available.find(p =>
                         p.name.toLowerCase().includes((aiRec.pick?.name || '').toLowerCase().split(' ').pop())
@@ -525,7 +474,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* Panel Toggle */}
       <div style={styles.panelToggle}>
         <button
           style={{ ...styles.panelBtn, ...(panel === 'picks' ? styles.panelBtnActive : {}) }}
@@ -541,12 +489,11 @@ function DraftCompanion() {
         </button>
       </div>
 
-      {/* ── PICKS PANEL ── */}
       {panel === 'picks' && (
         <div style={styles.picksPanel}>
           <input
             style={styles.searchInput}
-            placeholder="🔍  Search player name..."
+            placeholder="🔍 Search player name..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -563,12 +510,12 @@ function DraftCompanion() {
             ))}
           </div>
 
-          {filtered.slice(0, 40).map((p) => {
+          {filtered.slice(0, 40).map((p, displayIdx) => {
             const sv = survivalLabel(p.survival);
             return (
               <div key={p.id} style={styles.playerCard}>
                 <div style={styles.playerLeft}>
-                  <div style={styles.playerRank}>#{scoredPlayers.indexOf(p) + 1}</div>
+                  <div style={styles.playerRank}>#{displayIdx + 1}</div>
                   <div>
                     <div style={styles.playerTopRow}>
                       <span style={getPosBadge(p.position)}>{p.position}</span>
@@ -602,7 +549,6 @@ function DraftCompanion() {
         </div>
       )}
 
-      {/* ── ROSTER PANEL ── */}
       {panel === 'roster' && (
         <div style={styles.rosterPanel}>
           <div style={styles.needSection}>
@@ -656,28 +602,20 @@ function DraftCompanion() {
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function getPosBadge(position) {
   const colors = {
-    QB:  { background: '#7c3aed', color: '#fff' },
-    RB:  { background: '#16a34a', color: '#fff' },
-    WR:  { background: '#0284c7', color: '#fff' },
-    TE:  { background: '#d97706', color: '#fff' },
-    K:   { background: '#6b7280', color: '#fff' },
+    QB: { background: '#7c3aed', color: '#fff' },
+    RB: { background: '#16a34a', color: '#fff' },
+    WR: { background: '#0284c7', color: '#fff' },
+    TE: { background: '#d97706', color: '#fff' },
+    K: { background: '#6b7280', color: '#fff' },
     DEF: { background: '#dc2626', color: '#fff' },
   };
   return {
-    fontSize: 10,
-    fontWeight: 800,
-    padding: '2px 6px',
-    borderRadius: 4,
-    flexShrink: 0,
+    fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
     ...(colors[position] || { background: '#374151', color: '#fff' }),
   };
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 function PageSkeleton() {
   return (
@@ -687,8 +625,7 @@ function PageSkeleton() {
         <div key={i} style={{
           height: 56, borderRadius: 10, marginBottom: 12,
           background: 'linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%)',
-          backgroundSize: '200% 100%',
-          animation: 'shimmer 1.4s infinite',
+          backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite',
         }} />
       ))}
     </div>
@@ -696,121 +633,44 @@ function PageSkeleton() {
 }
 
 const styles = {
-  page: {
-    minHeight: '100vh',
-    background: '#0f0f0f',
-    color: '#fff',
-    fontFamily: "'Inter', -apple-system, sans-serif",
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 16px',
-    borderBottom: '1px solid #1f1f1f',
-    background: '#111',
-    position: 'sticky',
-    top: 0,
-    zIndex: 10,
-  },
+  page: { minHeight: '100vh', background: '#0f0f0f', color: '#fff', fontFamily: "'Inter', -apple-system, sans-serif" },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #1f1f1f', background: '#111', position: 'sticky', top: 0, zIndex: 10 },
   headerLeft: { display: 'flex', alignItems: 'center', gap: 10 },
   headerRight: { display: 'flex', alignItems: 'center', gap: 8 },
-  backBtn: {
-    background: 'transparent', border: '1px solid #2a2a2a',
-    color: '#71717a', borderRadius: 6, padding: '4px 10px', fontSize: 16, cursor: 'pointer',
-  },
+  backBtn: { background: 'transparent', border: '1px solid #2a2a2a', color: '#71717a', borderRadius: 6, padding: '4px 10px', fontSize: 16, cursor: 'pointer' },
   logo: { fontSize: 20 },
   headerTitle: { fontSize: 17, fontWeight: 700 },
-  roundBadge: {
-    background: '#f97316', color: '#fff',
-    padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-  },
-  undoBtn: {
-    background: '#1f1f1f', border: '1px solid #2a2a2a',
-    color: '#a1a1aa', borderRadius: 8, padding: '5px 10px', fontSize: 14, cursor: 'pointer',
-  },
-  turnBar: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '10px 16px', borderBottom: '1px solid',
-  },
+  roundBadge: { background: '#f97316', color: '#fff', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 },
+  undoBtn: { background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa', borderRadius: 8, padding: '5px 10px', fontSize: 14, cursor: 'pointer' },
+  turnBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid' },
   pickPos: { fontSize: 11, color: '#3f3f46' },
-  logBar: {
-    background: '#111', borderBottom: '1px solid #2a2a2a', padding: '10px 16px',
-  },
+  logBar: { background: '#111', borderBottom: '1px solid #2a2a2a', padding: '10px 16px' },
   logLabel: { fontSize: 11, color: '#52525b', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' },
   logBtns: { display: 'flex', gap: 6, flexWrap: 'wrap' },
-  logPosBtn: {
-    background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-  },
-  logSkipBtn: {
-    background: 'transparent', border: '1px solid #2a2a2a', color: '#3f3f46',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-  },
-  alertBanner: {
-    background: '#3f0000', borderBottom: '1px solid #ef4444',
-    color: '#fca5a5', fontSize: 13, fontWeight: 700, padding: '10px 16px', textAlign: 'center',
-  },
-  needBanner: {
-    background: '#1a1200', borderBottom: '1px solid #f97316',
-    color: '#fbbf24', fontSize: 13, fontWeight: 600, padding: '8px 16px',
-  },
-  lockedBanner: {
-    background: '#1a0a00', borderBottom: '1px solid #7c2d12',
-    padding: '10px 16px', fontSize: 12, color: '#9a3412',
-    fontWeight: 600, cursor: 'pointer',
-  },
-  suggestBanner: {
-    background: '#0d1a2e', borderBottom: '1px solid #0284c7', padding: '10px 16px',
-  },
-  suggestHeader: {
-    fontSize: 12, fontWeight: 800, color: '#38bdf8',
-    marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.4px',
-  },
-  suggestRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 0', borderBottom: '1px solid #0f2a3f',
-  },
+  logPosBtn: { background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
+  logSkipBtn: { background: 'transparent', border: '1px solid #2a2a2a', color: '#3f3f46', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer' },
+  alertBanner: { background: '#3f0000', borderBottom: '1px solid #ef4444', color: '#fca5a5', fontSize: 13, fontWeight: 700, padding: '10px 16px', textAlign: 'center' },
+  needBanner: { background: '#1a1200', borderBottom: '1px solid #f97316', color: '#fbbf24', fontSize: 13, fontWeight: 600, padding: '8px 16px' },
+  lockedBanner: { background: '#1a0a00', borderBottom: '1px solid #7c2d12', padding: '10px 16px', fontSize: 12, color: '#9a3412', fontWeight: 600, cursor: 'pointer' },
+  suggestBanner: { background: '#0d1a2e', borderBottom: '1px solid #0284c7', padding: '10px 16px' },
+  suggestHeader: { fontSize: 12, fontWeight: 800, color: '#38bdf8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.4px' },
+  suggestRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #0f2a3f' },
   suggestRank: { fontSize: 11, color: '#334155', fontWeight: 700, width: 20 },
   suggestInfo: { flex: 1, display: 'flex', flexDirection: 'column' },
   suggestName: { fontSize: 13, fontWeight: 700, color: '#e2e8f0' },
   suggestMeta: { fontSize: 11 },
-  suggestDraftBtn: {
-    background: '#0284c7', color: '#fff', border: 'none',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-  },
-  panelToggle: {
-    display: 'flex', borderBottom: '1px solid #1f1f1f', background: '#111',
-  },
-  panelBtn: {
-    flex: 1, background: 'transparent', border: 'none', color: '#52525b',
-    fontSize: 13, fontWeight: 600, padding: '12px 0', cursor: 'pointer',
-    borderBottom: '2px solid transparent',
-  },
+  suggestDraftBtn: { background: '#0284c7', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 },
+  panelToggle: { display: 'flex', borderBottom: '1px solid #1f1f1f', background: '#111' },
+  panelBtn: { flex: 1, background: 'transparent', border: 'none', color: '#52525b', fontSize: 13, fontWeight: 600, padding: '12px 0', cursor: 'pointer', borderBottom: '2px solid transparent' },
   panelBtnActive: { color: '#f97316', borderBottom: '2px solid #f97316' },
   picksPanel: { padding: '12px 16px', paddingBottom: 40 },
   rosterPanel: { padding: '12px 16px', paddingBottom: 40 },
-  searchInput: {
-    width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a',
-    borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#fff',
-    outline: 'none', marginBottom: 12, boxSizing: 'border-box',
-  },
+  searchInput: { width: '100%', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#fff', outline: 'none', marginBottom: 12, boxSizing: 'border-box' },
   posFilters: { display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' },
-  posBtn: {
-    background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-    fontWeight: 700, position: 'relative',
-  },
+  posBtn: { background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#a1a1aa', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700, position: 'relative' },
   posBtnActive: { background: '#f97316', color: '#fff', borderColor: '#f97316' },
-  urgencyDot: {
-    position: 'absolute', top: 2, right: 2,
-    width: 6, height: 6, borderRadius: '50%', background: '#ef4444',
-  },
-  playerCard: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    background: '#141414', borderRadius: 10, padding: '12px 14px',
-    marginBottom: 8, border: '1px solid #1f1f1f', gap: 10,
-  },
+  urgencyDot: { position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: '50%', background: '#ef4444' },
+  playerCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#141414', borderRadius: 10, padding: '12px 14px', marginBottom: 8, border: '1px solid #1f1f1f', gap: 10 },
   playerLeft: { display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1 },
   playerRank: { color: '#3f3f46', fontSize: 11, fontWeight: 700, minWidth: 22, paddingTop: 2 },
   playerTopRow: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 },
@@ -819,121 +679,50 @@ const styles = {
   survivalRow: { marginBottom: 4 },
   survivalText: { fontSize: 11, fontWeight: 700 },
   badgeRow: { display: 'flex', gap: 5 },
-  draftBtn: {
-    background: '#f97316', color: '#fff', border: 'none',
-    borderRadius: 8, padding: '8px 14px', fontSize: 13,
-    fontWeight: 700, cursor: 'pointer', flexShrink: 0, minWidth: 60,
-  },
-  valueBadge: {
-    background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 800,
-    padding: '2px 5px', borderRadius: 3, letterSpacing: '0.5px',
-  },
-  needBadge: {
-    background: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 800,
-    padding: '2px 5px', borderRadius: 3, letterSpacing: '0.5px',
-  },
+  draftBtn: { background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0, minWidth: 60 },
+  valueBadge: { background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 5px', borderRadius: 3, letterSpacing: '0.5px' },
+  needBadge: { background: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 5px', borderRadius: 3, letterSpacing: '0.5px' },
   needSection: { marginBottom: 16 },
-  sectionLabel: {
-    fontSize: 11, fontWeight: 800, color: '#52525b',
-    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10,
-  },
+  sectionLabel: { fontSize: 11, fontWeight: 800, color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 },
   needRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
   needPos: { fontSize: 11, fontWeight: 800, width: 32, color: '#a1a1aa' },
   needBar: { flex: 1, height: 6, background: '#1f1f1f', borderRadius: 3, overflow: 'hidden' },
   needBarFill: { height: '100%', borderRadius: 3, transition: 'width 0.3s' },
   needCount: { fontSize: 11, color: '#52525b', width: 28, textAlign: 'right' },
-  rosterRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '9px 0', borderBottom: '1px solid #1a1a1a',
-  },
+  rosterRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 0', borderBottom: '1px solid #1a1a1a' },
   rosterRound: { fontSize: 10, color: '#3f3f46', fontWeight: 700, width: 22 },
   rosterInfo: { flex: 1 },
   rosterName: { fontSize: 13, fontWeight: 600 },
   rosterTeam: { fontSize: 11, color: '#52525b' },
   emptyState: { color: '#3f3f46', fontSize: 13, padding: '30px 0', textAlign: 'center' },
-  draftComplete: {
-    background: '#0a1f0a', border: '1px solid #16a34a',
-    borderRadius: 10, padding: '14px', marginTop: 16,
-    fontSize: 13, color: '#86efac', textAlign: 'center',
-  },
-  goLineupBtn: {
-    display: 'block', width: '100%', marginTop: 10,
-    background: '#f97316', color: '#fff', border: 'none',
-    borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-  },
-  setupWrap: {
-    display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-    padding: '40px 20px',
-  },
-  setupCard: {
-    background: '#141414', border: '1px solid #2a2a2a',
-    borderRadius: 16, padding: '28px 24px', width: '100%', maxWidth: 420,
-  },
+  draftComplete: { background: '#0a1f0a', border: '1px solid #16a34a', borderRadius: 10, padding: '14px', marginTop: 16, fontSize: 13, color: '#86efac', textAlign: 'center' },
+  goLineupBtn: { display: 'block', width: '100%', marginTop: 10, background: '#f97316', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer' },
+  setupWrap: { display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '40px 20px' },
+  setupCard: { background: '#141414', border: '1px solid #2a2a2a', borderRadius: 16, padding: '28px 24px', width: '100%', maxWidth: 420 },
   setupTitle: { fontSize: 22, fontWeight: 800, marginBottom: 6 },
   setupSub: { fontSize: 13, color: '#71717a', marginBottom: 28, lineHeight: 1.5 },
   setupField: { marginBottom: 24 },
   setupLabel: { display: 'block', fontSize: 13, fontWeight: 600, color: '#a1a1aa', marginBottom: 10 },
   setupStepper: { display: 'flex', alignItems: 'center', gap: 16 },
-  stepBtn: {
-    background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#fff',
-    borderRadius: 8, width: 40, height: 40, fontSize: 20,
-    cursor: 'pointer', fontWeight: 700, lineHeight: 1,
-  },
+  stepBtn: { background: '#1f1f1f', border: '1px solid #2a2a2a', color: '#fff', borderRadius: 8, width: 40, height: 40, fontSize: 20, cursor: 'pointer', fontWeight: 700, lineHeight: 1 },
   stepValue: { fontSize: 28, fontWeight: 800, minWidth: 40, textAlign: 'center' },
-  setupPreview: {
-    background: '#0f1f0f', border: '1px solid #16a34a',
-    borderRadius: 8, padding: '10px 14px',
-    fontSize: 12, color: '#86efac', marginBottom: 24,
-  },
-  startBtn: {
-    width: '100%', background: '#f97316', color: '#fff', border: 'none',
-    borderRadius: 12, padding: '14px 0', fontSize: 16, fontWeight: 700, cursor: 'pointer',
-  },
-
-  // AI Autopilot styles
+  setupPreview: { background: '#0f1f0f', border: '1px solid #16a34a', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#86efac', marginBottom: 24 },
+  startBtn: { width: '100%', background: '#f97316', color: '#fff', border: 'none', borderRadius: 12, padding: '14px 0', fontSize: 16, fontWeight: 700, cursor: 'pointer' },
   aiSection: { padding: '10px 16px', borderBottom: '1px solid #1f1f1f' },
-  aiLocked: {
-    background: '#1a0a00', border: '1px solid #7c2d12',
-    borderRadius: 10, padding: '10px 14px',
-    fontSize: 12, color: '#9a3412', fontWeight: 600, cursor: 'pointer',
-  },
-  aiAskBtn: {
-    width: '100%', background: '#18181b', border: '1px solid #3f3f46',
-    borderRadius: 10, padding: '12px 16px', fontSize: 14, fontWeight: 700,
-    color: '#f97316', cursor: 'pointer', textAlign: 'left',
-  },
-  aiCard: {
-    background: '#0d1117', border: '1px solid #f97316',
-    borderRadius: 10, padding: '12px 14px',
-  },
-  aiCardHeader: {
-    fontSize: 10, fontWeight: 800, color: '#f97316',
-    letterSpacing: '0.8px', marginBottom: 10,
-  },
+  aiLocked: { background: '#1a0a00', border: '1px solid #7c2d12', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#9a3412', fontWeight: 600, cursor: 'pointer' },
+  aiAskBtn: { width: '100%', background: '#18181b', border: '1px solid #3f3f46', borderRadius: 10, padding: '12px 16px', fontSize: 14, fontWeight: 700, color: '#f97316', cursor: 'pointer', textAlign: 'left' },
+  aiCard: { background: '#0d1117', border: '1px solid #f97316', borderRadius: 10, padding: '12px 14px' },
+  aiCardHeader: { fontSize: 10, fontWeight: 800, color: '#f97316', letterSpacing: '0.8px', marginBottom: 10 },
   aiThinking: { fontSize: 13, color: '#71717a', fontStyle: 'italic' },
   aiError: { fontSize: 13, color: '#f87171', marginBottom: 8 },
-  aiRetryBtn: {
-    background: 'transparent', border: '1px solid #3f3f46',
-    borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#71717a', cursor: 'pointer',
-  },
-  aiPickRow: {
-    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
-  },
+  aiRetryBtn: { background: 'transparent', border: '1px solid #3f3f46', borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#71717a', cursor: 'pointer' },
+  aiPickRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
   aiPickName: { fontSize: 16, fontWeight: 800, flex: 1 },
   aiPickTeam: { fontSize: 11, color: '#71717a' },
-  aiDraftBtn: {
-    background: '#f97316', color: '#fff', border: 'none',
-    borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-  },
+  aiDraftBtn: { background: '#f97316', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
   aiReason: { fontSize: 13, color: '#d4d4d8', lineHeight: 1.5, marginBottom: 8 },
-  aiInsight: {
-    fontSize: 12, color: '#a1a1aa', background: '#18181b',
-    borderRadius: 6, padding: '8px 10px', marginBottom: 8, lineHeight: 1.4,
-  },
-  aiRefreshBtn: {
-    background: 'transparent', border: 'none',
-    fontSize: 11, color: '#52525b', cursor: 'pointer', padding: 0,
-  },
+  aiInsight: { fontSize: 12, color: '#a1a1aa', background: '#18181b', borderRadius: 6, padding: '8px 10px', marginBottom: 8, lineHeight: 1.4 },
+  aiRefreshBtn: { background: 'transparent', border: 'none', fontSize: 11, color: '#52525b', cursor: 'pointer', padding: 0 },
 };
 
 export default withAuth(DraftCompanion);
