@@ -20,17 +20,6 @@ function buildRequirements(rosterPositions) {
   return Object.keys(reqs).length ? reqs : DEFAULT_REQUIREMENTS;
 }
 
-function buildRosterStructureText(rosterPositions) {
-  if (!rosterPositions?.length) return null;
-  return rosterPositions
-    .filter(rp => rp.position !== 'BN' && rp.position !== 'IR')
-    .map(rp => {
-      const label = rp.position.includes('/') ? `${rp.position} FLEX` : rp.position;
-      return rp.count > 1 ? `${rp.count}x ${label}` : `1x ${label}`;
-    })
-    .join(', ');
-}
-
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 const POS_DEMAND = { QB: 0.08, RB: 0.30, WR: 0.32, TE: 0.10, K: 0.05, DEF: 0.05 };
 
@@ -121,8 +110,8 @@ function DraftCompanion() {
   const [totalRounds, setTotalRounds] = useState(15);
 
   const [myRoster, setMyRoster] = useState([]);
-  const [available, setAvailable] = useState(DRAFT_POOL);
-  const [adpSource, setAdpSource] = useState('sample');
+  const [available, setAvailable] = useState([]);
+  const [adpLoaded, setAdpLoaded] = useState(false);
   const [currentOverallPick, setCurrentOverallPick] = useState(1);
   const [opponentCounts, setOpponentCounts] = useState({ QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 });
 
@@ -149,14 +138,19 @@ function DraftCompanion() {
     async function loadLiveAdp() {
       try {
         const res = await fetch('/api/adp');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('API failed');
         const data = await res.json();
         if (data.players?.length > 10) {
-          setAvailable(data.players.sort((a, b) => a.adp - b.adp));
-          setAdpSource('live');
+          const sorted = [...data.players].sort((a, b) => parseFloat(a.adp) - parseFloat(b.adp));
+          setAvailable(sorted);
+          setAdpLoaded(true);
+          return;
         }
+        throw new Error('Too few players');
       } catch {
-        // stay on sampleData fallback
+        const sorted = [...DRAFT_POOL].sort((a, b) => parseFloat(a.adp) - parseFloat(b.adp));
+        setAvailable(sorted);
+        setAdpLoaded(true);
       }
     }
     loadLiveAdp();
@@ -263,7 +257,7 @@ function DraftCompanion() {
     if (myRoster.length === 0) return;
     const last = myRoster[myRoster.length - 1];
     setMyRoster(prev => prev.slice(0, -1));
-    setAvailable(prev => [...prev, last].sort((a, b) => a.adp - b.adp));
+    setAvailable(prev => [...prev, last].sort((a, b) => parseFloat(a.adp) - parseFloat(b.adp)));
     setCurrentOverallPick(last.draftedPick);
   }
 
@@ -271,9 +265,9 @@ function DraftCompanion() {
     return available.map(p => {
       const posUrgency = urgency[p.position] || 0;
       const isNeed = posUrgency > 0.3;
-      const isValuePick = p.adp > currentRound + 2;
+      const isValuePick = parseFloat(p.adp) > currentRound + 2;
       const survival = calcSurvival(p, currentOverallPick, nextMyPick, available);
-      return { ...p, isNeed, isValuePick, survival };
+      return { ...p, adp: parseFloat(p.adp), isNeed, isValuePick, survival };
     }).sort((a, b) => a.adp - b.adp);
   }, [available, urgency, currentRound, currentOverallPick, nextMyPick]);
 
@@ -474,6 +468,12 @@ function DraftCompanion() {
         </div>
       )}
 
+      {!adpLoaded && (
+        <div style={{ padding: '20px 16px', textAlign: 'center', color: '#52525b', fontSize: 13 }}>
+          Loading players...
+        </div>
+      )}
+
       <div style={styles.panelToggle}>
         <button
           style={{ ...styles.panelBtn, ...(panel === 'picks' ? styles.panelBtnActive : {}) }}
@@ -543,7 +543,7 @@ function DraftCompanion() {
             );
           })}
 
-          {filtered.length === 0 && (
+          {filtered.length === 0 && adpLoaded && (
             <div style={styles.emptyState}>No players match that filter.</div>
           )}
         </div>
