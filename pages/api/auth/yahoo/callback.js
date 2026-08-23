@@ -82,7 +82,15 @@ export default async function handler(req, res) {
       }
     }
 
-    // Store tokens in Supabase, linked to user_id if available
+    // Bail out if we couldn't link this Yahoo token to a Supabase user —
+    // upserting with a null user_id creates an orphaned row that can
+    // never be found again (getYahooToken looks up by user_id).
+    if (!userId) {
+      console.error('Yahoo OAuth callback: could not resolve Supabase user from state param');
+      return res.redirect(`${appUrl}/connect?error=session_expired`);
+    }
+
+    // Store tokens in Supabase, linked to user_id
 
     const { error: upsertError } = await supabase.from('yahoo_tokens').upsert({
       yahoo_guid:    yahooGuid || null,
