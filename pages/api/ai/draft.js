@@ -63,6 +63,41 @@ function buildRosterContext(rosterPositions, currentRoster) {
   };
 }
 
+/**
+ * Fallback when Yahoo's exact roster slots aren't available (API not yet
+ * approved / league_settings never synced) but the user hand-set their
+ * league's starting lineup in the draft setup screen.
+ * manualRequirements: {QB: 2, RB: 4, WR: 4, TE: 2, K: 1, DEF: 1}
+ */
+function buildGapsFromManual(manualRequirements, currentRoster) {
+  if (!manualRequirements || !Object.keys(manualRequirements).length) return null;
+
+  const drafted = {};
+  for (const p of currentRoster) {
+    drafted[p.position] = (drafted[p.position] || 0) + 1;
+  }
+
+  const gaps = [];
+  for (const [pos, needed] of Object.entries(manualRequirements)) {
+    if (!needed) continue;
+    const have = drafted[pos] || 0;
+    const stillNeed = Math.max(0, needed - have);
+    if (stillNeed > 0) {
+      gaps.push(`${pos}: need ${stillNeed} more (have ${have}, target ${needed})`);
+    }
+  }
+
+  const structureText = Object.entries(manualRequirements)
+    .filter(([, n]) => n > 0)
+    .map(([pos, n]) => `${n}x ${pos}`)
+    .join(', ');
+
+  return {
+    structureText: `Manager-set target roster: ${structureText}.`,
+    gapsText: gaps.length ? gaps.join('\n') : 'All target positions are filled.',
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -81,6 +116,7 @@ export default async function handler(req, res) {
     roster = [], available = [], round = 1, pick = 1,
     draftPosition = 1, numTeams = 10, leagueKey,
     leagueDraftCounts = null, // { QB: 3, RB: 8, WR: 9, TE: 2, ... }
+    manualRequirements = null, // roster spots the manager set by hand in draft setup, used when Yahoo's real slots aren't synced yet
   } = req.body;
 
   // Pull roster positions from Supabase cache
@@ -102,8 +138,10 @@ export default async function handler(req, res) {
     scoringSummary  = settings?.scoring_summary  || null;
   }
 
-  // Build roster context from actual league structure
-  const rosterCtx = buildRosterContext(rosterPositions, roster);
+  // Build roster context from actual league structure — prefer Yahoo's real
+  // synced slots, fall back to what the manager set by hand in setup.
+  const rosterCtx = buildRosterContext(rosterPositions, roster)
+    || buildGapsFromManual(manualRequirements, roster);
 
   const rosterText = roster.length === 0
     ? 'No players drafted yet.'

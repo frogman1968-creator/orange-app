@@ -127,6 +127,12 @@ function DraftCompanion() {
 
   const [rosterRequirements, setRosterRequirements] = useState(DEFAULT_REQUIREMENTS);
   const [rosterPositions, setRosterPositions] = useState(null);
+  const [reqsCustomized, setReqsCustomized] = useState(false); // true once the user hand-edits roster spots in setup
+
+  function bumpRequirement(pos, delta) {
+    setReqsCustomized(true);
+    setRosterRequirements(prev => ({ ...prev, [pos]: Math.max(0, Math.min(9, (prev[pos] ?? 0) + delta)) }));
+  }
 
   const { isPremium } = useTrial();
   const { selected, loading: leagueLoading } = useLeague();
@@ -170,7 +176,7 @@ function DraftCompanion() {
         );
         if (!settingsRes.ok) return;
         const settings = await settingsRes.json();
-        if (settings.rosterPositions?.length) {
+        if (settings.rosterPositions?.length && !reqsCustomized) {
           setRosterPositions(settings.rosterPositions);
           setRosterRequirements(buildRequirements(settings.rosterPositions));
         }
@@ -241,6 +247,7 @@ function DraftCompanion() {
           numTeams,
           leagueKey,
           leagueDraftCounts: opponentCounts,
+          manualRequirements: rosterRequirements,
         }),
       });
       const data = await res.json();
@@ -316,6 +323,22 @@ function DraftCompanion() {
                 <span style={styles.stepValue}>{totalRounds}</span>
                 <button style={styles.stepBtn} onClick={() => setTotalRounds(n => Math.min(25, n + 1))}>+</button>
               </div>
+            </div>
+            <div style={styles.setupField}>
+              <label style={styles.setupLabel}>Your league's starting lineup</label>
+              <div style={{ fontSize: 11, color: '#71717a', marginBottom: 10, lineHeight: 1.4 }}>
+                Orange can't pull this from Yahoo yet — set it to match your real league so pick suggestions and "still need" alerts are accurate. Defaults shown are a generic standard league.
+              </div>
+              {['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(pos => (
+                <div key={pos} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#d4d4d8', width: 40 }}>{pos}</span>
+                  <div style={styles.setupStepper}>
+                    <button style={styles.stepBtn} onClick={() => bumpRequirement(pos, -1)}>−</button>
+                    <span style={styles.stepValue}>{rosterRequirements[pos] ?? 0}</span>
+                    <button style={styles.stepBtn} onClick={() => bumpRequirement(pos, 1)}>+</button>
+                  </div>
+                </div>
+              ))}
             </div>
             <div style={styles.setupPreview}>
               🎯 Your picks: {getSnakePickSlots(draftPosition, numTeams, totalRounds).slice(0, 5).join(', ')}...
