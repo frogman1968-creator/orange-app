@@ -126,6 +126,7 @@ function MockDraftPage() {
 
   // Draft state
   const [available, setAvailable] = useState([]);
+    const [livePool, setLivePool]   = useState(null); // live ADP from /api/adp, replaces the stale static MOCK_DRAFT_POOL once loaded
   const [rosters, setRosters]     = useState({}); // { teamIndex: [player,...] }
   const [board, setBoard]         = useState([]); // { pick, round, teamIndex, teamName, player, isMe }
   const [currentPick, setCurrentPick] = useState(1);
@@ -148,6 +149,26 @@ function MockDraftPage() {
   const boardRef    = useRef(null);
 
   useEffect(() => setMounted(true), []);
+
+    // Load live ADP so the draft pool reflects current rankings instead of
+  // the static MOCK_DRAFT_POOL, which is a fixed, dated list (it doesn't
+  // even include players who broke out after it was written).
+  useEffect(() => {
+    async function loadLiveAdp() {
+      try {
+        const res = await fetch('/api/adp');
+        if (!res.ok) throw new Error('API failed');
+        const data = await res.json();
+        if (data.players?.length > 10) {
+          const sorted = [...data.players].sort((a, b) => parseFloat(a.adp) - parseFloat(b.adp));
+          setLivePool(sorted);
+        }
+      } catch {
+        // Leave livePool null — startDraft() falls back to MOCK_DRAFT_POOL
+      }
+    }
+    loadLiveAdp();
+  }, []);
 
   // Load league settings for roster-aware advice
   useEffect(() => {
@@ -178,8 +199,8 @@ function MockDraftPage() {
     for (let i = 0; i < numTeams; i++) initRosters[i] = [];
     setRosters(initRosters);
 
-    setAvailable([...MOCK_DRAFT_POOL]);
-    setBoard([]);
+    setBoard([]);    
+    setAvailable([...(livePool || MOCK_DRAFT_POOL)]);
     setCurrentPick(1);
     setAiRec(null);
     setLastBotPick(null);
