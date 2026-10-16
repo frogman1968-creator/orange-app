@@ -212,10 +212,10 @@ function Dashboard() {
 
       {/* Draft Report Card — Coming Soon */}
       <div
-        style={{ ...styles.draftGradeCard, opacity: 0.5, cursor: 'default' }}
+        style={{ ...styles.draftGradeCard, cursor: 'pointer' }}
       >
         <div style={styles.breakdownLeft}>
-          <div style={styles.draftGradeLabel}>DRAFT REPORT CARD · COMING SOON</div>
+          <div style={styles.draftGradeLabel}>DRAFT REPORT CARD</div>
           <div style={styles.breakdownTitle}>How Does Your Team Stack Up?</div>
           <div style={styles.breakdownSub}>Launching soon — your squad graded against every team in the league. No ADP. Just results.</div>
         </div>

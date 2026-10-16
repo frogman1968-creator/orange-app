@@ -571,7 +571,7 @@ function CompleteScreen({ rosters, config, board, onReset, router }) {
           Run Another Mock Draft
         </button>
         <button style={{ ...S.completeBtn, background: '#1a1a2e', color: '#555', cursor: 'default' }}>
-          Draft Report Card — Coming Soon
+          Grade My Real Draft →
         </button>
         <button style={{ ...S.completeBtn, background: 'none', color: '#555' }} onClick={() => router.push('/dashboard')}>
           Back to Dashboard
